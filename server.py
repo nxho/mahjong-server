@@ -4,9 +4,7 @@ from random import randrange
 from tile_groups import honor, numeric, bonus
 
 sio = socketio.Server()
-app = socketio.WSGIApp(sio, static_files={
-    '/': {'content_type': 'text/html', 'filename': 'index.html'}
-})
+app = socketio.WSGIApp(sio)
 
 # TODO: use uuids instead of sids
 # - generate and return uuid to client when new client joins game
