@@ -3,7 +3,7 @@ import eventlet
 from random import randrange
 from tile_groups import honor, numeric, bonus
 
-sio = socketio.Server()
+sio = socketio.Server(cors_allowed_origins='*')
 app = socketio.WSGIApp(sio)
 
 # TODO: use uuids instead of sids
