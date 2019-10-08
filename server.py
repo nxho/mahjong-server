@@ -81,6 +81,7 @@ def enter_game(sid, username):
 
     # if enough players, start game
     if len(players) == 4:
+        print('Enough players have joined, starting game')
         init_tiles()
         deal_tiles()
         start_turn()
