@@ -21,17 +21,23 @@ def init_tiles():
     cache.game_tiles = game_tiles
     print('Initialized game tiles')
 
+def draw_tile():
+    game_tiles = cache.game_tiles
+    random_idx = randrange(len(game_tiles))
+    if random_idx != len(game_tiles) - 1:
+        game_tiles[random_idx], game_tiles[-1] = game_tiles[-1], game_tiles[random_idx]
+    return game_tiles.pop()
+
 def deal_tiles():
     game_tiles = cache.game_tiles
     player_sids = cache.player_sids
-    for sid in player_sids:
+    for idx, sid in enumerate(player_sids):
         player_tiles = cache.get_player_tiles(sid)
-        for i in range(14):
-            random_idx = randrange(len(game_tiles))
-            if random_idx != len(game_tiles) - 1:
-                game_tiles[random_idx], game_tiles[-1] = game_tiles[-1], game_tiles[random_idx]
 
-            player_tiles.append(game_tiles.pop())
+        # first player (dealer) gets 14 tiles, discards a tile to start the game
+        num_of_tiles = 14 if idx == 0 else 13
+        for _ in range(num_of_tiles):
+            player_tiles.append(draw_tile())
 
         sio.emit('update_tiles', player_tiles, sid)
     print('Dealt tiles to players')
