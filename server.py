@@ -44,6 +44,7 @@ def deal_tiles():
 
 # Notify player to start turn
 def start_turn(sid):
+    print(f'Starting {sid}\'s turn')
     sio.emit('start_turn', room=sid)
 
 # Player notifies server to end their turn and start next player's turn
