@@ -49,7 +49,24 @@ def start_turn(sid):
 
 # Player notifies server to end their turn and start next player's turn
 @sio.on('end_turn')
-def end_turn(sid):
+def end_turn(sid, discarded_tile):
+    print(f'{cache.get_player_name(sid)} discarded {discarded_tile}')
+
+    player_tiles = cache.get_player_tiles(sid)
+
+    if discarded_tile not in player_tiles:
+        print(f'ERROR: discarded_tile={discarded_tile} does not exist in sid={sid} tiles')
+        return
+
+    player_tiles.remove(discarded_tile)
+
+    # Update sid's player tiles
+    sio.emit('update_tiles', player_tiles, room=sid)
+
+    # Update all sid's discarded tile
+    sio.emit('update_discarded_tile', discarded_tile, room='game')
+
+    # Point to next player
     cache.inc_current_player_idx()
     start_turn(cache.get_current_player_sid())
 
@@ -100,6 +117,8 @@ def leave_game(sid):
 def disconnect(sid):
     # On page reload, remove players from game pool
     cache.remove_player(sid)
+    # Also, just reset player_idx to 0 to reset game
+    cache.current_player_idx = 0
     print('disconnect ', sid)
 
 if __name__ == '__main__':
