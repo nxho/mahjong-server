@@ -142,11 +142,11 @@ def enter_game(sid, payload):
     # Add player into game data
     cache.add_player(room_id, username, player_uuid)
 
-    # Announce message to chatroom
-    sio.emit('text_message', f'{username} joined the game', room=room_id)
-
     # Update opponents for all room members
     update_opponents(room_id)
+
+    # Announce message to chatroom
+    sio.emit('text_message', f'{username} joined the game', room=room_id)
 
     # If enough players, start game
     num_of_players = cache.get_room_size(room_id)

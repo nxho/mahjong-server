@@ -64,6 +64,9 @@ class MahjongCacheClient:
         return new_room_id
 
     def add_player(self, room_id, username, player_uuid):
+        if player_uuid in self.room_id_by_uuid:
+            print(f'Player uuid {player_uuid} is already in room, not re-adding')
+
         # Add mapping for uuid to room_id, this will be used to search for an ongoing game if player disconnects
         self.room_id_by_uuid[player_uuid] = room_id
 
