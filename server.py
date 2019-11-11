@@ -115,6 +115,18 @@ def connect(sid, environ):
             print('No game in progress')
             sio.emit('pull_existing_game_data', {}, room=sid)
 
+'''
+This event handler handles 3 different scenarios:
+    - User is rejoining, this event handler is called automatically when frontend page loads
+    - User specifies room id to join
+        - If room id exists, and player does not exist in room, player is added to room
+        - If room id exists and player is in room, player is not added
+    - User does not specify room id
+        - Random open room is picked for user to join
+
+Maybe I should separate out concerns, latter half of this function is ensuring that other clients know about
+players that have just joined
+'''
 @validate_payload_fields(['username', 'player_uuid'])
 @sio.on('enter_game')
 def enter_game(sid, payload):
@@ -138,6 +150,8 @@ def enter_game(sid, payload):
         print(f"Saved room_id={room_id} to sid={sid}'s session")
         sio.enter_room(sid, room_id)
         print(f'Entered game with room_id={room_id}')
+
+    sio.emit('update_room_id', room_id, room=sid)
 
     # Add player into game data
     cache.add_player(room_id, username, player_uuid)
