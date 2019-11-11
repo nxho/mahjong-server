@@ -1,6 +1,9 @@
 from collections import defaultdict
 import random
 import string
+import server_logger
+
+logger = server_logger.get()
 
 class Room:
     """Interface containing methods for common player/room interactions"""
@@ -50,7 +53,9 @@ class MahjongCacheClient:
 
     def search_for_room(self, player_uuid):
         if player_uuid in self.room_id_by_uuid:
-            return self.room_id_by_uuid[player_uuid]
+            room_id = self.room_id_by_uuid[player_uuid]
+            logger.info(f'Player player_uuid={player_uuid} is already in room_id={room_id}')
+            return room_id
 
         for r_id in self.open_room_ids:
             room_size = len(self.rooms[r_id]['player_uuids'])
@@ -59,13 +64,15 @@ class MahjongCacheClient:
                     self.open_room_ids.remove(r_id)
                 return r_id
 
+        # No available room found, creating new room for player
+        logger.info(f'No available rooms, creating new room for player_uuid={player_uuid}')
         new_room_id = self.generate_room_id()
         self.open_room_ids.add(new_room_id)
         return new_room_id
 
     def add_player(self, room_id, username, player_uuid):
         if player_uuid in self.room_id_by_uuid:
-            print(f'Player uuid {player_uuid} is already in room, not re-adding')
+            logger.info(f'Player uuid {player_uuid} is already in room, not re-adding')
             return
 
         # Add mapping for uuid to room_id, this will be used to search for an ongoing game if player disconnects
