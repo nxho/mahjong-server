@@ -26,6 +26,7 @@ class MahjongCacheClient:
             'player_by_uuid': {},
             'player_uuids': [],
             'current_player_idx': 0,
+            'current_player_uuid': None,
         })
 
         # User uuid to room id map
@@ -57,10 +58,13 @@ class MahjongCacheClient:
             logger.info(f'Player player_uuid={player_uuid} is already in room_id={room_id}')
             return room_id
 
+        logger.info(f'open_rooms: {self.open_room_ids}')
         for r_id in self.open_room_ids:
-            room_size = len(self.rooms[r_id]['player_uuids'])
+            room_size = self.get_room_size(r_id)
             if room_size < 4:
+                logger.info(f'Found available room_id={r_id}')
                 if room_size == 3:
+                    logger.info(f'Room has 3 players already, removing room_id={r_id} from open rooms set')
                     self.open_room_ids.remove(r_id)
                 return r_id
 
@@ -90,4 +94,14 @@ class MahjongCacheClient:
 
         # Add uuid to list of active players
         room['player_uuids'].append(player_uuid)
+
+        if not room['current_player_uuid']:
+            room['current_player_uuid'] = player_uuid
+
+    def point_to_next_player(room_id):
+        room = self.get_room(room_id)
+        player_uuids = room['player_uuids']
+        current_player_idx = room['current_player_idx'] = (room['current_player_idx'] + 1) % len(player_uuids)
+        current_player_uuid = room['current_player_uuid'] = player_uuids[current_player_idx]
+        return current_player_uuid
 
