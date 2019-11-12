@@ -14,14 +14,24 @@ app = socketio.WSGIApp(sio)
 
 cache = MahjongCacheClient()
 
+# Put command line arguments here?
+config = {}
+
 '''
 Game-specific methods
 '''
 
+def build_app(use_bonus=True):
+    config['use_bonus'] = use_bonus
+    return app
+
 def init_tiles(room_id):
     room = cache.get_room(room_id)
     game_tiles = room['game_tiles']
-    for tile_set in [*honor, *numeric, *bonus]:
+    tile_sets = [*honor, *numeric]
+    if config['use_bonus']:
+        tile_sets.append(*bonus)
+    for tile_set in tile_sets:
         for i in range(tile_set['count']):
             for tile_type in tile_set['types']:
                 game_tiles.append({
@@ -166,6 +176,10 @@ def rejoin_game(sid, payload):
     save_session_data(sid, player_uuid, room_id)
     update_opponents_for_player(room_id, player_uuid)
 
+    room = cache.get_room(room_id)
+    if room['discarded_tiles']:
+        sio.emit('update_discarded_tile', room['discarded_tiles'][-1], room=sid)
+
 @sio.on('enter_game')
 @validate_payload_fields(['username', 'player_uuid'])
 @log_exception
@@ -221,6 +235,10 @@ def end_turn(sid, payload):
             logger.error(f"discarded_tile={discarded_tile} does not exist in player_uuid={player_uuid}'s tiles")
             return
 
+        # Add to discarded tiles history
+        room['discarded_tiles'].append(discarded_tile)
+
+        # Remove from player tiles
         player_tiles.remove(discarded_tile)
 
         # Update this player's tiles

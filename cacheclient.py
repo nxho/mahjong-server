@@ -27,6 +27,7 @@ class MahjongCacheClient:
             'player_uuids': [],
             'current_player_idx': 0,
             'current_player_uuid': None,
+            'discarded_tiles': [],
         })
 
         # User uuid to room id map
