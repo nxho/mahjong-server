@@ -74,6 +74,11 @@ class MahjongCacheClient:
         self.open_room_ids.add(new_room_id)
         return new_room_id
 
+    def get_opponents(self, room_id, player_uuid):
+        room = self.get_room(room_id)
+        return list(map(lambda pid: { 'name':  room['player_by_uuid'][pid]['username'] },
+                        list(filter(lambda other_pid: other_pid != player_uuid, room['player_uuids']))))
+
     def add_player(self, room_id, username, player_uuid):
         if player_uuid in self.room_id_by_uuid:
             logger.info(f'Player uuid {player_uuid} is already in room, not re-adding')
@@ -98,10 +103,16 @@ class MahjongCacheClient:
         if not room['current_player_uuid']:
             room['current_player_uuid'] = player_uuid
 
-    def point_to_next_player(room_id):
+    def point_to_next_player(self, room_id):
         room = self.get_room(room_id)
-        player_uuids = room['player_uuids']
-        current_player_idx = room['current_player_idx'] = (room['current_player_idx'] + 1) % len(player_uuids)
-        current_player_uuid = room['current_player_uuid'] = player_uuids[current_player_idx]
+        current_player_uuid = room['current_player_uuid']
+
+        room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = False
+
+        current_player_idx = room['current_player_idx'] = (room['current_player_idx'] + 1) % 4
+        current_player_uuid = room['current_player_uuid'] = room['player_uuids'][current_player_idx]
+
+        room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = True
+
         return current_player_uuid
 

@@ -42,7 +42,7 @@ def deal_tiles(room_id):
     game_tiles = room['game_tiles']
     player_uuids = room['player_uuids']
     for idx, player_uuid in enumerate(player_uuids):
-        player_tiles = room['player_by_uuid']['tiles']
+        player_tiles = room['player_by_uuid'][player_uuid]['tiles']
 
         # first player (dealer) gets 14 tiles, discards a tile to start the game
         num_of_tiles = 14 if idx == 0 else 13
@@ -54,17 +54,27 @@ def deal_tiles(room_id):
 
 def start_next_turn(room_id):
     player_uuid = cache.point_to_next_player(room_id)
+    start_turn(player_uuid, room_id)
+
+def start_game(room_id):
+    room = cache.get_room(room_id)
+    player_uuid = room['current_player_uuid']
+    room['player_by_uuid'][player_uuid]['isCurrentTurn'] = True
+    start_turn(player_uuid, room_id)
+
+def start_turn(player_uuid, room_id):
     logger.info(f'Starting {player_uuid}\'s turn in room_id={room_id}')
     sio.emit('start_turn', room=player_uuid)
 
 def update_opponents(room_id):
     room = cache.get_room(room_id)
-    player_uuids = room['player_uuids']
-    for player_uuid in player_uuids:
-        opponents = list(map(lambda pid: { 'name':  room['player_by_uuid'][pid]['username'] },
-                             list(filter(lambda other_pid: other_pid != player_uuid, player_uuids))))
-        logger.info(f'Sending update_opponents event to player_uuid={player_uuid} with opponents={opponents} for room_id={room_id}')
-        sio.emit('update_opponents', opponents, room=player_uuid)
+    for player_uuid in room['player_uuids']:
+        update_opponents_for_player(room_id, player_uuid)
+
+def update_opponents_for_player(room_id, player_uuid):
+    opponents = cache.get_opponents(room_id, player_uuid)
+    logger.info(f'Sending update_opponents event to player_uuid={player_uuid} with opponents={opponents} for room_id={room_id}')
+    sio.emit('update_opponents', opponents, room=player_uuid)
 
 '''
 Decorators for event handlers
@@ -75,8 +85,6 @@ def validate_payload_fields(fields):
     def _validate_payload_fields(func):
         @functools.wraps(func)
         def wrapper_validate_payload_fields(*args, **kwargs):
-            logger.info('asdfsadfasdlkj')
-
             if len(args) < 2 and ('sid' not in kwargs or 'payload' not in kwargs):
                 return
             if len(args) >= 2:
@@ -133,26 +141,7 @@ def connect(sid, environ):
             logger.info('No game in progress')
             sio.emit('pull_existing_game_data', {}, room=sid)
 
-'''
-This event handler handles 3 different scenarios:
-    - User is rejoining, this event handler is called automatically when frontend page loads
-    - User specifies room id to join
-        - If room id exists, and player does not exist in room, player is added to room
-        - If room id exists and player is in room, player is not added
-    - User does not specify room id
-        - Random open room is picked for user to join
-
-Maybe I should separate out concerns, latter half of this function is ensuring that other clients know about
-players that have just joined
-'''
-@sio.on('enter_game')
-@validate_payload_fields(['username', 'player_uuid'])
-@log_exception
-def enter_game(sid, payload):
-    logger.info(payload)
-    username = payload['username']
-    player_uuid = payload['player_uuid']
-    room_id = payload['room_id'] if 'room_id' in payload else None
+def save_session_data(sid, player_uuid, room_id):
     with sio.session(sid) as session:
         # Store socket id to user's uuid, subsequent events will use the socket id to determine user's uuid
         session['player_uuid'] = player_uuid
@@ -160,36 +149,56 @@ def enter_game(sid, payload):
 
         # Create room with user's uuid, so events can be emitted to a uuid vs a socket id
         sio.enter_room(sid, player_uuid)
-        logger.info(f'Created individual room for player_uuid={player_uuid}')
+        logger.info(f'Entered individual room for player_uuid={player_uuid}')
 
-        if not room_id:
-            # No room provided by client, search for next available room
-            logger.info(f'No room provided by player_uuid={player_uuid}, searching for next available room')
-            room_id = cache.search_for_room(player_uuid)
+        session['room_id'] = room_id
+        logger.info(f"Saved room_id={room_id} to sid={sid}'s session")
 
-            session['room_id'] = room_id
-            logger.info(f"Saved room_id={room_id} to sid={sid}'s session")
-            sio.enter_room(sid, room_id)
-            logger.info(f'Entered game with room_id={room_id}')
+        sio.enter_room(sid, room_id)
+        logger.info(f'Entered game room with room_id={room_id}')
 
-        sio.emit('update_room_id', room_id, room=sid)
+@sio.on('rejoin_game')
+@validate_payload_fields(['player_uuid', 'room_id'])
+@log_exception
+def rejoin_game(sid, payload):
+    player_uuid = payload['player_uuid']
+    room_id = payload['room_id']
+    save_session_data(sid, player_uuid, room_id)
+    update_opponents_for_player(room_id, player_uuid)
 
-        # Add player into game data
-        cache.add_player(room_id, username, player_uuid)
+@sio.on('enter_game')
+@validate_payload_fields(['username', 'player_uuid'])
+@log_exception
+def enter_game(sid, payload):
+    username = payload['username']
+    player_uuid = payload['player_uuid']
+    room_id = payload['room_id'] if 'room_id' in payload else None
 
-        # Update opponents for all room members
-        update_opponents(room_id)
+    if not room_id:
+        # No room provided by client, search for next available room
+        logger.info(f'No room provided by player_uuid={player_uuid}, searching for next available room')
+        room_id = cache.search_for_room(player_uuid)
 
-        # Announce message to chatroom
-        sio.emit('text_message', f'{username} joined the game', room=room_id)
+    save_session_data(sid, player_uuid, room_id)
 
-        # If enough players, start game
-        num_of_players = cache.get_room_size(room_id)
-        if num_of_players == 4:
-            logger.info(f'Enough players have joined, starting game for room_id={room_id}')
-            init_tiles(room_id)
-            deal_tiles(room_id)
-            start_next_turn(room_id)
+    sio.emit('update_room_id', room_id, room=sid)
+
+    # Add player into game data
+    cache.add_player(room_id, username, player_uuid)
+
+    # Update opponents for all room members
+    update_opponents(room_id)
+
+    # Announce message to chatroom
+    sio.emit('text_message', f'{username} joined the game', room=room_id)
+
+    # If enough players, start game
+    num_of_players = cache.get_room_size(room_id)
+    if num_of_players == 4:
+        logger.info(f'Enough players have joined, starting game for room_id={room_id}')
+        init_tiles(room_id)
+        deal_tiles(room_id)
+        start_game(room_id)
 
 # Player notifies server to end their turn and start next player's turn
 @sio.on('end_turn')
@@ -197,14 +206,17 @@ def enter_game(sid, payload):
 @log_exception
 def end_turn(sid, payload):
     discarded_tile = payload['discarded_tile']
-    logger.info(f'{cache.get_player_name(sid)} discarded {discarded_tile}')
 
     with sio.session(sid) as session:
         room_id = session['room_id']
         player_uuid = session['player_uuid']
         room = cache.get_room(room_id)
+        player = room['player_by_uuid'][player_uuid]
 
-        player_tiles = room['player_by_uuid'][player_uuid]['tiles']
+        username = player['username']
+        logger.info(f'{username} discarded {discarded_tile}')
+
+        player_tiles = player['tiles']
         if discarded_tile not in player_tiles:
             logger.error(f"discarded_tile={discarded_tile} does not exist in player_uuid={player_uuid}'s tiles")
             return
