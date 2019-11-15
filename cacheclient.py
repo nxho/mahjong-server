@@ -28,6 +28,7 @@ class MahjongCacheClient:
             'current_player_idx': 0,
             'current_player_uuid': None,
             'discarded_tiles': [],
+            'messages': [],
         })
 
         # User uuid to room id map
@@ -35,6 +36,16 @@ class MahjongCacheClient:
 
         # Rooms with < 4 players
         self.open_room_ids = set()
+
+        # Possible player states
+        self.states = set([
+            'DRAW_TILE',
+            'DISCARD_TILE',
+            'CAN_CLAIM_TILE',
+            'NO_ACTION',
+            'LOSS',
+            'WIN',
+        ])
 
     def get_room(self, room_id):
         return self.rooms[room_id]
@@ -96,6 +107,7 @@ class MahjongCacheClient:
             'username': username,
             'tiles': [],
             'isCurrentTurn': False,
+            'currentState': 'NO_ACTION',
         }
 
         # Add uuid to list of active players
@@ -109,11 +121,13 @@ class MahjongCacheClient:
         current_player_uuid = room['current_player_uuid']
 
         room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = False
+        room['player_by_uuid'][current_player_uuid]['current_state'] = 'NO_ACTION'
 
         current_player_idx = room['current_player_idx'] = (room['current_player_idx'] + 1) % 4
         current_player_uuid = room['current_player_uuid'] = room['player_uuids'][current_player_idx]
 
         room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = True
+        room['player_by_uuid'][current_player_uuid]['current_state'] = 'DRAW_TILE'
 
         return current_player_uuid
 

@@ -70,6 +70,7 @@ def start_game(room_id):
     room = cache.get_room(room_id)
     player_uuid = room['current_player_uuid']
     room['player_by_uuid'][player_uuid]['isCurrentTurn'] = True
+    room['player_by_uuid'][player_uuid]['current_state'] = 'DISCARD_TILE'
     start_turn(player_uuid, room_id)
 
 def start_turn(player_uuid, room_id):
@@ -138,18 +139,33 @@ Socket.IO event handlers
 @log_exception
 def connect(sid, environ):
     logger.info(f'Connect sid={sid}')
-    qs_dict = {k: v for k, v in [s.split('=') for s in environ['QUERY_STRING'].split('&')]}
-    if 'mahjong-player-uuid' in qs_dict:
-        player_uuid = qs_dict['mahjong-player-uuid']
-        logger.info('Checking for game in progress')
-        if player_uuid in cache.room_id_by_uuid:
-            room_id = cache.room_id_by_uuid[player_uuid]
-            room = cache.get_room(room_id)
-            logger.info(f'Found game in progress, active room_id={room_id}')
-            sio.emit('pull_existing_game_data', { 'room_id': room_id, **room['player_by_uuid'][player_uuid] }, room=sid)
-        else:
-            logger.info('No game in progress')
-            sio.emit('pull_existing_game_data', {}, room=sid)
+
+@sio.event
+@validate_payload_fields(['player-uuid'])
+@log_exception
+def get_existing_game_data(sid, payload):
+    player_uuid = payload['player-uuid']
+    logger.info('Checking for game in progress')
+    response_payload = {}
+    if player_uuid in cache.room_id_by_uuid:
+        room_id = cache.room_id_by_uuid[player_uuid]
+        room = cache.get_room(room_id)
+        logger.info(f'Found game in progress, active room_id={room_id}')
+        response_payload = {
+            'roomId': room_id,
+            **room['player_by_uuid'][player_uuid]
+        }
+    else:
+        logger.info('No game in progress')
+    return response_payload
+
+@sio.event
+def get_possible_states(sid):
+    states = list(cache.states)
+    logger.info(f'Returning possible states={states}')
+    return {
+        'states': states,
+    }
 
 def save_session_data(sid, player_uuid, room_id):
     with sio.session(sid) as session:
@@ -260,7 +276,10 @@ def message(sid, payload):
         player_uuid = session['player_uuid']
         room = cache.get_room(room_id)
         username = room['player_by_uuid'][player_uuid]['username']
-        sio.emit('text_message', f'{username}: {msg}', room=room_id)
+
+        msg_to_send = f'{username}: {msg}'
+        room['messages'].append(msg_to_send)
+        sio.emit('text_message', msg_to_send, room=room_id)
         logger.info(f'{username} says: {msg}')
 
 @sio.on('leave_game')
