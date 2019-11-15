@@ -121,13 +121,13 @@ class MahjongCacheClient:
         current_player_uuid = room['current_player_uuid']
 
         room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = False
-        room['player_by_uuid'][current_player_uuid]['current_state'] = 'NO_ACTION'
+        room['player_by_uuid'][current_player_uuid]['currentState'] = 'NO_ACTION'
 
         current_player_idx = room['current_player_idx'] = (room['current_player_idx'] + 1) % 4
         current_player_uuid = room['current_player_uuid'] = room['player_uuids'][current_player_idx]
 
         room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = True
-        room['player_by_uuid'][current_player_uuid]['current_state'] = 'DRAW_TILE'
+        room['player_by_uuid'][current_player_uuid]['currentState'] = 'DRAW_TILE'
 
         return current_player_uuid
 

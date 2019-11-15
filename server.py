@@ -62,6 +62,12 @@ def deal_tiles(room_id):
         sio.emit('update_tiles', player_tiles, room=player_uuid)
     logger.info(f'Dealt tiles to players for room_id={room_id}')
 
+def emit_player_current_state(player_uuid, room_id):
+    room = cache.get_room(room_id)
+    new_state = room['player_by_uuid'][player_uuid]['currentState']
+    sio.emit('update_current_state', new_state, room=player_uuid)
+    logger.info(f'Sending state update of new_state={new_state} to player_uuid={player_uuid}')
+
 def start_next_turn(room_id):
     player_uuid = cache.point_to_next_player(room_id)
     start_turn(player_uuid, room_id)
@@ -70,10 +76,11 @@ def start_game(room_id):
     room = cache.get_room(room_id)
     player_uuid = room['current_player_uuid']
     room['player_by_uuid'][player_uuid]['isCurrentTurn'] = True
-    room['player_by_uuid'][player_uuid]['current_state'] = 'DISCARD_TILE'
+    room['player_by_uuid'][player_uuid]['currentState'] = 'DISCARD_TILE'
     start_turn(player_uuid, room_id)
 
 def start_turn(player_uuid, room_id):
+    emit_player_current_state(player_uuid, room_id)
     logger.info(f'Starting {player_uuid}\'s turn in room_id={room_id}')
     sio.emit('start_turn', room=player_uuid)
 
@@ -229,6 +236,23 @@ def enter_game(sid, payload):
         init_tiles(room_id)
         deal_tiles(room_id)
         start_game(room_id)
+
+@sio.event
+@log_exception
+def draw_tile(sid):
+    with sio.session(sid) as session:
+        room_id = session['room_id']
+        player_uuid = session['player_uuid']
+        room = cache.get_room(room_id)
+        player = room['player_by_uuid'][player_uuid]
+
+        # Draw tile, add on server side, send tile to player using separate event type
+        drawn_tile = room['game_tiles'].pop()
+        player['tiles'].append(drawn_tile)
+        sio.emit('extend_tiles', drawn_tile, room=sid)
+
+        player['currentState'] = 'DISCARD_TILE'
+        emit_player_current_state(player_uuid, room_id)
 
 # Player notifies server to end their turn and start next player's turn
 @sio.on('end_turn')
