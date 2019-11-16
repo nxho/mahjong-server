@@ -62,6 +62,12 @@ def deal_tiles(room_id):
         sio.emit('update_tiles', player_tiles, room=player_uuid)
     logger.info(f'Dealt tiles to players for room_id={room_id}')
 
+def emit_player_current_state(player_uuid, room_id):
+    room = cache.get_room(room_id)
+    new_state = room['player_by_uuid'][player_uuid]['currentState']
+    sio.emit('update_current_state', new_state, room=player_uuid)
+    logger.info(f'Sending state update of new_state={new_state} to player_uuid={player_uuid}')
+
 def start_next_turn(room_id):
     player_uuid = cache.point_to_next_player(room_id)
     start_turn(player_uuid, room_id)
@@ -70,9 +76,11 @@ def start_game(room_id):
     room = cache.get_room(room_id)
     player_uuid = room['current_player_uuid']
     room['player_by_uuid'][player_uuid]['isCurrentTurn'] = True
+    room['player_by_uuid'][player_uuid]['currentState'] = 'DISCARD_TILE'
     start_turn(player_uuid, room_id)
 
 def start_turn(player_uuid, room_id):
+    emit_player_current_state(player_uuid, room_id)
     logger.info(f'Starting {player_uuid}\'s turn in room_id={room_id}')
     sio.emit('start_turn', room=player_uuid)
 
@@ -138,18 +146,33 @@ Socket.IO event handlers
 @log_exception
 def connect(sid, environ):
     logger.info(f'Connect sid={sid}')
-    qs_dict = {k: v for k, v in [s.split('=') for s in environ['QUERY_STRING'].split('&')]}
-    if 'mahjong-player-uuid' in qs_dict:
-        player_uuid = qs_dict['mahjong-player-uuid']
-        logger.info('Checking for game in progress')
-        if player_uuid in cache.room_id_by_uuid:
-            room_id = cache.room_id_by_uuid[player_uuid]
-            room = cache.get_room(room_id)
-            logger.info(f'Found game in progress, active room_id={room_id}')
-            sio.emit('pull_existing_game_data', { 'room_id': room_id, **room['player_by_uuid'][player_uuid] }, room=sid)
-        else:
-            logger.info('No game in progress')
-            sio.emit('pull_existing_game_data', {}, room=sid)
+
+@sio.event
+@validate_payload_fields(['player-uuid'])
+@log_exception
+def get_existing_game_data(sid, payload):
+    player_uuid = payload['player-uuid']
+    logger.info('Checking for game in progress')
+    response_payload = {}
+    if player_uuid in cache.room_id_by_uuid:
+        room_id = cache.room_id_by_uuid[player_uuid]
+        room = cache.get_room(room_id)
+        logger.info(f'Found game in progress, active room_id={room_id}')
+        response_payload = {
+            'roomId': room_id,
+            **room['player_by_uuid'][player_uuid]
+        }
+    else:
+        logger.info('No game in progress')
+    return response_payload
+
+@sio.event
+def get_possible_states(sid):
+    states = list(cache.states)
+    logger.info(f'Returning possible states={states}')
+    return {
+        'states': states,
+    }
 
 def save_session_data(sid, player_uuid, room_id):
     with sio.session(sid) as session:
@@ -214,6 +237,23 @@ def enter_game(sid, payload):
         deal_tiles(room_id)
         start_game(room_id)
 
+@sio.event
+@log_exception
+def draw_tile(sid):
+    with sio.session(sid) as session:
+        room_id = session['room_id']
+        player_uuid = session['player_uuid']
+        room = cache.get_room(room_id)
+        player = room['player_by_uuid'][player_uuid]
+
+        # Draw tile, add on server side, send tile to player using separate event type
+        drawn_tile = room['game_tiles'].pop()
+        player['tiles'].append(drawn_tile)
+        sio.emit('extend_tiles', drawn_tile, room=sid)
+
+        player['currentState'] = 'DISCARD_TILE'
+        emit_player_current_state(player_uuid, room_id)
+
 # Player notifies server to end their turn and start next player's turn
 @sio.on('end_turn')
 @validate_payload_fields(['discarded_tile'])
@@ -260,7 +300,10 @@ def message(sid, payload):
         player_uuid = session['player_uuid']
         room = cache.get_room(room_id)
         username = room['player_by_uuid'][player_uuid]['username']
-        sio.emit('text_message', f'{username}: {msg}', room=room_id)
+
+        msg_to_send = f'{username}: {msg}'
+        room['messages'].append(msg_to_send)
+        sio.emit('text_message', msg_to_send, room=room_id)
         logger.info(f'{username} says: {msg}')
 
 @sio.on('leave_game')
