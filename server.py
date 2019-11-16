@@ -7,7 +7,7 @@ from random import randrange
 from tile_groups import honor, numeric, bonus
 from cacheclient import MahjongCacheClient
 
-logger = server_logger.init(to_console=False)
+logger = server_logger.init()
 
 sio = socketio.Server(cors_allowed_origins='*')
 app = socketio.WSGIApp(sio)
@@ -21,7 +21,8 @@ config = {}
 Game-specific methods
 '''
 
-def build_app(use_bonus=True):
+def build_app(use_bonus=True, to_console=True, to_file=False):
+    server_logger.init(to_console, to_file)
     config['use_bonus'] = use_bonus
     return app
 

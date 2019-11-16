@@ -1,6 +1,6 @@
 import logging
 
-def init(to_console=True, to_file=True):
+def init(to_console=False, to_file=False):
     logger = logging.getLogger('mahjong-server')
     logger.setLevel(logging.DEBUG)
 
