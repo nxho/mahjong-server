@@ -1,1 +1,1 @@
-web: gunicorn server:app -k eventlet -w 1
+web: gunicorn "server:build_app(use_bonus=False)" -k eventlet -w 1
