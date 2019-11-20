@@ -1,4 +1,5 @@
 python-socketio
 eventlet
 gunicorn
+python-dotenv
 

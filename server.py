@@ -1,18 +1,25 @@
-import os
-import json
-import socketio
 import eventlet
 import functools
-import server_logger
+import json
 import logging
+import os
+import socketio
 from dotenv import load_dotenv
+from pathlib import Path
 from random import randrange
+
+import server_logger
 from tile_groups import honor, numeric, bonus
 from cacheclient import MahjongCacheClient
 
 ### Load environment variables from dotenv ###
 
-load_dotenv(verbose=True)
+env_path = Path('.') / '.env'
+
+if os.getenv('MAHJONG_ENV', 'dev') == 'heroku':
+    env_path = Path('.') / '.env.heroku'
+
+load_dotenv(dotenv_path=env_path, verbose=True)
 
 config = {}
 config['include_bonus'] = os.getenv('INCLUDE_BONUS', 'True') == 'True'
