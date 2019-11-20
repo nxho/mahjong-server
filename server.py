@@ -5,6 +5,7 @@ import logging
 import os
 import socketio
 from dotenv import load_dotenv
+from operator import itemgetter
 from pathlib import Path
 from random import randrange
 
@@ -69,10 +70,13 @@ def deal_tiles(room_id):
     for idx, player_uuid in enumerate(player_uuids):
         player_tiles = room['player_by_uuid'][player_uuid]['tiles']
 
-        # first player (dealer) gets 14 tiles, discards a tile to start the game
+        # First player (dealer) gets 14 tiles, discards a tile to start the game
         num_of_tiles = 14 if idx == 0 else 13
         for _ in range(num_of_tiles):
             player_tiles.append(game_tiles.pop())
+
+        # Group similar tiles
+        player_tiles.sort(key=itemgetter('suit', 'type'))
 
         sio.emit('update_tiles', player_tiles, room=player_uuid)
     logger.info(f'Dealt tiles to players for room_id={room_id}')
