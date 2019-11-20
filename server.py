@@ -1,38 +1,45 @@
+import os
+import json
 import socketio
 import eventlet
 import functools
 import server_logger
 import logging
+from dotenv import load_dotenv
 from random import randrange
 from tile_groups import honor, numeric, bonus
 from cacheclient import MahjongCacheClient
 
-logger = server_logger.init()
+### Load environment variables from dotenv ###
 
-sio = socketio.Server(cors_allowed_origins='*')
-app = socketio.WSGIApp(sio)
+load_dotenv(verbose=True)
+
+config = {}
+config['include_bonus'] = os.getenv('INCLUDE_BONUS', 'True') == 'True'
+config['to_console'] = os.getenv('TO_CONSOLE', 'False') == 'True'
+config['to_file'] = os.getenv('TO_FILE', 'False') == 'True'
+
+#### Server initialization #####
+
+logger = server_logger.init(config['to_console'], config['to_file'])
+
+logger.info(f'Loaded with config: {json.dumps(config, indent=4)}')
 
 cache = MahjongCacheClient()
 
-# Put command line arguments here?
-config = {}
+sio = socketio.Server(cors_allowed_origins='*', async_mode='eventlet')
+app = socketio.WSGIApp(sio)
 
-'''
-Game-specific methods
-'''
-
-def build_app(use_bonus=True, to_console=True, to_file=False):
-    server_logger.init(to_console, to_file)
-    config['use_bonus'] = use_bonus
-    return app
+##### Game-specific methods #####
 
 def init_tiles(room_id):
     room = cache.get_room(room_id)
     game_tiles = room['game_tiles']
     tile_sets = [*honor, *numeric]
-    if config['use_bonus']:
+    if config['include_bonus']:
         tile_sets.append(*bonus)
     for tile_set in tile_sets:
+        logger.info(f"Initializing {tile_set['suit']} tiles")
         for i in range(tile_set['count']):
             for tile_type in tile_set['types']:
                 game_tiles.append({
@@ -95,9 +102,7 @@ def update_opponents_for_player(room_id, player_uuid):
     logger.info(f'Sending update_opponents event to player_uuid={player_uuid} with opponents={opponents} for room_id={room_id}')
     sio.emit('update_opponents', opponents, room=player_uuid)
 
-'''
-Decorators for event handlers
-'''
+##### Decorators for event handlers #####
 
 def validate_payload_fields(fields):
     """Decorator that checks for existence of fields in the payload passed to an event handler"""
@@ -139,9 +144,7 @@ def log_exception(func):
             logger.exception(f'Exception occured in event_handler={func.__name__}')
     return wrapper_log_exception
 
-'''
-Socket.IO event handlers
-'''
+##### Socket.IO event handlers #####
 
 @sio.on('connect')
 @log_exception
