@@ -453,6 +453,13 @@ def update_claim_state(sid, payload):
             room['current_discarded_tile'] = None
             next_pid, meld_type = get_next_player_uuid(players, discarded_tile)
             if next_pid:
+                # End game here, if player has won by claiming discard
+                if meld_type == 'WIN':
+                    logger.info(f'player_uuid={next_pid} won by claiming discard, emitting winning game state')
+
+                    emit_winning_game_state(next_pid, room_id)
+                    return
+
                 logger.info(f'player_uuid={next_pid} needs to meld {meld_type}')
 
                 # Start turn of this player id
@@ -521,6 +528,44 @@ def complete_new_meld(sid, payload):
 def declare_concealed_kong(sid, payload):
     concealed_kong = payload['concealed_kong']
 
+    with sio.session(sid) as session:
+        room_id = session['room_id']
+        player_uuid = session['player_uuid']
+
+
+@sio.on('declare_win')
+@log_exception
+def declare_win(sid):
+    with sio.session(sid) as session:
+        room_id = session['room_id']
+        player_uuid = session['player_uuid']
+        player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+        player_name = player['username']
+
+        logger.info(f"Player player_uuid={player_uuid}, player_name={player_name} declaring win")
+
+        if player['currentState'] != 'DISCARD_TILE':
+            logger.info(f"Player player_uuid={player_uuid}, player_name={player_name} declaring win")
+            return
+
+        num_of_melds = len(player['revealedMelds']) + len(player['concealedKongs'])
+        if mahjong_rules.can_meld_concealed_hand(player['tiles'], 4 - num_of_melds):
+            logger.info(f"Win attempt succeeded for player_uuid={player_uuid}, player_name={player_name}")
+
+            emit_winning_game_state(player_uuid, room_id)
+        else:
+            logger.info(f"Win attempt failed for player_uuid={player_uuid}, player_name={player_name}")
+
+def emit_winning_game_state(winning_player_uuid, room_id):
+    room = cache.get_room(room_id)
+
+    for pid in room['player_uuids']:
+        if pid == winning_player_uuid:
+            room['player_by_uuid'][pid]['currentState'] = 'WIN'
+        else:
+            room['player_by_uuid'][pid]['currentState'] = 'LOSS'
+        emit_player_current_state(pid, room_id)
+
 @sio.on('text_message')
 @validate_payload_fields(['message'])
 @log_exception
@@ -542,10 +587,20 @@ def message(sid, payload):
 def leave_game(sid):
     with sio.session(sid) as session:
         room_id = session['room_id']
-        room = cache.get_room_obj(room_id)
-        room.remove_player(session['player_uuid'])
+        player_uuid = session['player_uuid']
+        room = cache.get_room(room_id)
+
+        # Remove player_uuid from room data
+        del room['player_by_uuid'][player_uuid]
+        room['player_uuids'].remove(player_uuid)
+
+        # Remove player_uuid to room_id mapping
+        del cache.room_id_by_uuid[player_uuid]
+
+        # Remove player_uuid from socketio data
         sio.leave_room(room_id)
         del session['room_id']
+
         logger.info(f'Player {player_uuid} left room_id={room_id}')
 
 @sio.on('disconnect')

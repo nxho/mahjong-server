@@ -5,15 +5,6 @@ import server_logger
 
 logger = server_logger.get()
 
-class Room:
-    """Interface containing methods for common player/room interactions"""
-    def __init__(self, room):
-        self.room = room
-
-    def remove_player(self, player_uuid):
-        del room['player_by_uuid'][player_uuid]
-        room['player_uuids'].remove(player_uuid)
-
 # TODO: leverage this when migrating to Redis(?), we can use the same methods from the socketio listeners, we'll just change the method implementation
 # Reasons for doing this (is this justifiable?):
 #   - We can implement an in-memory storage while the server is running
@@ -52,12 +43,6 @@ class MahjongCacheClient:
 
     def get_room(self, room_id):
         return self.rooms[room_id]
-
-    def get_room_obj(self, room_id):
-        # TODO: is this a use case for context manager e.g. when using Redis?
-        # because behind the scenes we want to initialize a Room obj, and then finally
-        # when we're done updating the object, we want to submit the updates to Redis
-        return Room(self.rooms[room_id])
 
     def get_room_size(self, room_id):
         return len(self.rooms[room_id]['player_uuids'])
