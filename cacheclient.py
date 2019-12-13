@@ -76,8 +76,11 @@ class MahjongCacheClient:
 
     def get_opponents(self, room_id, player_uuid):
         room = self.get_room(room_id)
-        return list(map(lambda pid: { 'name':  room['player_by_uuid'][pid]['username'] },
-                        list(filter(lambda other_pid: other_pid != player_uuid, room['player_uuids']))))
+        return [{
+            'name': room['player_by_uuid'][opponent_id]['username'],
+            'revealedMelds': room['player_by_uuid'][opponent_id]['revealedMelds'],
+            'tileCount': len(room['player_by_uuid'][opponent_id]['tiles']),
+        } for opponent_id in [pid for pid in room['player_uuids'] if pid != player_uuid]]
 
     def add_player(self, room_id, username, player_uuid):
         if player_uuid in self.room_id_by_uuid:

@@ -265,6 +265,7 @@ def enter_game(sid, payload):
         logger.info(f'Enough players have joined, starting game for room_id={room_id}')
         init_tiles(room_id)
         deal_tiles(room_id)
+        update_opponents(room_id)
         start_game(room_id)
 
 @sio.event
@@ -320,9 +321,11 @@ def end_turn(sid, payload):
         # Update discarded tile for all players in room 
         sio.emit('update_discarded_tile', discarded_tile, to=room_id)
 
-        # Start next player's turn
-        # FIXME: This needs to be moved so that the next turn does not get started immediately. this should get triggered after all claims have been resolved
-        # start_next_turn(room_id)
+        # Update opponent data for all players
+        # TODO: should be optimized so that we only update the one opponent for 3 other players
+        #       OR on the client side we can decide what needs to be updated? overall we shouldn't
+        #       cause unnecessary renders
+        update_opponents(room_id)
 
         # Give other players 2 seconds to decide to claim tile
         for pid in room['player_uuids']:
@@ -449,10 +452,13 @@ def update_claim_state(sid, payload):
             # Clear set of player uuids that submitted claim
             room['claimed_player_uuids'].clear()
 
+            # Get next player according to submitted claims
             discarded_tile = room['current_discarded_tile']
-            room['current_discarded_tile'] = None
             next_pid, meld_type = get_next_player_uuid(players, discarded_tile)
             if next_pid:
+                # Remove most recently discarded tile
+                room['current_discarded_tile'] = None
+
                 # End game here, if player has won by claiming discard
                 if meld_type == 'WIN':
                     logger.info(f'player_uuid={next_pid} won by claiming discard, emitting winning game state')
@@ -520,6 +526,7 @@ def complete_new_meld(sid, payload):
         if new_meld_len == 4:
             # Meld was a KONG, player needs to draw a replacement tile
             player['currentState'] = 'DRAW_TILE'
+
         emit_player_current_state(player_uuid, room_id)
 
 @sio.on('declare_concealed_kong')
