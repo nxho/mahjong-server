@@ -5,15 +5,6 @@ import server_logger
 
 logger = server_logger.get()
 
-class Room:
-    """Interface containing methods for common player/room interactions"""
-    def __init__(self, room):
-        self.room = room
-
-    def remove_player(self, player_uuid):
-        del room['player_by_uuid'][player_uuid]
-        room['player_uuids'].remove(player_uuid)
-
 # TODO: leverage this when migrating to Redis(?), we can use the same methods from the socketio listeners, we'll just change the method implementation
 # Reasons for doing this (is this justifiable?):
 #   - We can implement an in-memory storage while the server is running
@@ -26,12 +17,13 @@ class MahjongCacheClient:
             'player_by_uuid': {},
             'player_uuids': [],
             'current_player_idx': 0,
-            'current_player_uuid': None,
             'discarded_tiles': [],
+            'current_discarded_tile': None,
             'messages': [],
+            'claimed_player_uuids': set(),
         })
 
-        # User uuid to room id map
+        # User uuid to room id map, useful for rejoining a game
         self.room_id_by_uuid = {}
 
         # Rooms with < 4 players
@@ -41,20 +33,16 @@ class MahjongCacheClient:
         self.states = set([
             'DRAW_TILE',
             'DISCARD_TILE',
-            'CAN_CLAIM_TILE',
+            'DECLARE_CLAIM',
             'NO_ACTION',
             'LOSS',
             'WIN',
+            'CLAIM_TILE',
+            'NO_CLAIM_ATTEMPT',
         ])
 
     def get_room(self, room_id):
         return self.rooms[room_id]
-
-    def get_room_obj(self, room_id):
-        # TODO: is this a use case for context manager e.g. when using Redis?
-        # because behind the scenes we want to initialize a Room obj, and then finally
-        # when we're done updating the object, we want to submit the updates to Redis
-        return Room(self.rooms[room_id])
 
     def get_room_size(self, room_id):
         return len(self.rooms[room_id]['player_uuids'])
@@ -108,26 +96,40 @@ class MahjongCacheClient:
             'tiles': [],
             'isCurrentTurn': False,
             'currentState': 'NO_ACTION',
+            'declareClaimStartTime': None,
+            'declaredMeldType': None,
+            'validMeldSubsets': None,
+            'revealedMelds': [],
+            'newMeld': [],
+            'concealedKongs': [],
+            'canDeclareKong': False,
         }
 
         # Add uuid to list of active players
         room['player_uuids'].append(player_uuid)
 
-        if not room['current_player_uuid']:
-            room['current_player_uuid'] = player_uuid
-
+    # TODO: generalize function to "set current player" essentially, can
+    #       pass in optional parameter to set a specific player
     def point_to_next_player(self, room_id):
         room = self.get_room(room_id)
-        current_player_uuid = room['current_player_uuid']
+        current_player_idx = room['current_player_idx']
+        current_player_uuid = room['player_uuids'][current_player_idx]
 
-        room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = False
         room['player_by_uuid'][current_player_uuid]['currentState'] = 'NO_ACTION'
 
-        current_player_idx = room['current_player_idx'] = (room['current_player_idx'] + 1) % 4
-        current_player_uuid = room['current_player_uuid'] = room['player_uuids'][current_player_idx]
+        room['current_player_idx'] = current_player_idx = (current_player_idx + 1) % 4
+        current_player_uuid = room['player_uuids'][current_player_idx]
 
-        room['player_by_uuid'][current_player_uuid]['isCurrentTurn'] = True
-        room['player_by_uuid'][current_player_uuid]['currentState'] = 'DRAW_TILE'
+        self.set_next_player(room_id, current_player_uuid, 'DRAW_TILE')
 
         return current_player_uuid
+
+    def set_next_player(self, room_id, player_uuid, next_state):
+        room = self.get_room(room_id)
+
+        room['current_player_idx'] = room['player_uuids'].index(player_uuid)
+        room['player_by_uuid'][player_uuid]['currentState'] = next_state
+
+    def set_player_state(self, room_id, player_uuid, new_state):
+        self.rooms[room_id]['player_by_uuid'][player_uuid]['currentState'] = new_state
 
