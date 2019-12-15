@@ -4,7 +4,7 @@ from collections import defaultdict, Counter
 from Constants import HONOR_SUITS, NUMERIC_SUITS, SETS_NEEDED_TO_WIN 
 
 def get_valid_tile_sets(tiles, discarded_tile, target_meld):
-    if target_meld == 'PONG':
+    if target_meld == 'PUNG':
         return [[{
             'suit': discarded_tile['suit'],
             'type': discarded_tile['type'],
@@ -25,7 +25,7 @@ def check_tiles_against_meld(tiles, discarded_tile, target_meld, table_sets={}, 
         target_set_count = SETS_NEEDED_TO_WIN - len(table_sets)
         if can_meld_concealed_hand(tiles_with_discarded_tile, target_set_count):
             return 3
-    elif target_meld in {'PONG', 'KONG'}:
+    elif target_meld in {'PUNG', 'KONG'}:
         if can_meld_pong(tiles, discarded_tile):
             return 2
     elif target_meld == 'CHOW':
