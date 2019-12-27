@@ -80,6 +80,7 @@ class MahjongCacheClient:
             'name': room['player_by_uuid'][opponent_id]['username'],
             'revealedMelds': room['player_by_uuid'][opponent_id]['revealedMelds'],
             'tileCount': len(room['player_by_uuid'][opponent_id]['tiles']),
+            'concealedKongCount': len(room['player_by_uuid'][opponent_id]['concealedKongs']),
         } for opponent_id in [pid for pid in room['player_uuids'] if pid != player_uuid]]
 
     def add_player(self, room_id, username, player_uuid):
@@ -97,7 +98,6 @@ class MahjongCacheClient:
         room['player_by_uuid'][player_uuid] = {
             'username': username,
             'tiles': [],
-            'isCurrentTurn': False,
             'currentState': 'NO_ACTION',
             'declareClaimStartTime': None,
             'declaredMeldType': None,
@@ -106,6 +106,7 @@ class MahjongCacheClient:
             'newMeld': [],
             'concealedKongs': [],
             'canDeclareKong': False,
+            'canDeclareWin': False,
         }
 
         # Add uuid to list of active players
