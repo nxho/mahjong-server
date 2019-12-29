@@ -2,7 +2,7 @@ import random
 
 from collections import Counter
 
-from context import honor, numeric
+from tests.context import honor, numeric
 
 class TileRack(list):
     """Better string representation of list of tiles"""

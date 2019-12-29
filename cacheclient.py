@@ -17,7 +17,7 @@ class MahjongCacheClient:
             'player_by_uuid': {},
             'player_uuids': [],
             'current_player_idx': 0,
-            'discarded_tiles': [],
+            'past_discarded_tiles': [],
             'current_discarded_tile': None,
             'messages': [],
             'claimed_player_uuids': set(),
@@ -76,12 +76,15 @@ class MahjongCacheClient:
 
     def get_opponents(self, room_id, player_uuid):
         room = self.get_room(room_id)
+        player_idx = room['player_uuids'].index(player_uuid)
+        # Order opponent uuids in order of play
+        opponent_uuids = [room['player_uuids'][(player_idx + i) % 4] for i in range(1, 4)]
         return [{
             'name': room['player_by_uuid'][opponent_id]['username'],
             'revealedMelds': room['player_by_uuid'][opponent_id]['revealedMelds'],
             'tileCount': len(room['player_by_uuid'][opponent_id]['tiles']),
-            'concealedKongCount': len(room['player_by_uuid'][opponent_id]['concealedKongs']),
-        } for opponent_id in [pid for pid in room['player_uuids'] if pid != player_uuid]]
+            'concealedKongs': room['player_by_uuid'][opponent_id]['concealedKongs'],
+        } for opponent_id in opponent_uuids]
 
     def add_player(self, room_id, username, player_uuid):
         if player_uuid in self.room_id_by_uuid:

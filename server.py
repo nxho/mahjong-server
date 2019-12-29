@@ -16,6 +16,9 @@ import mahjong_rules
 from tile_groups import honor, numeric, bonus
 from cacheclient import MahjongCacheClient
 
+# TODO: this is just for testing purposes
+from tests.util import TileSampler
+
 ### Load environment variables from dotenv ###
 
 env_path = Path('.') / '.env'
@@ -70,18 +73,29 @@ def deal_tiles(room_id):
     room = cache.get_room(room_id)
     game_tiles = room['game_tiles']
     player_uuids = room['player_uuids']
+    # FIXME: remove this when done testing
+    sampler = TileSampler()
     for idx, player_uuid in enumerate(player_uuids):
         player_tiles = room['player_by_uuid'][player_uuid]['tiles']
 
         # First player (dealer) gets 14 tiles, discards a tile to start the game
         num_of_tiles = 14 if idx == 0 else 13
+        if idx == 0:
+            pong = sampler.pong()
+            player_tiles.extend(pong + [dict(pong[0])] + sampler.rand_tile(9))
+        else:
+            player_tiles.extend(sampler.rand_tile(13))
+        '''
         for _ in range(num_of_tiles):
             player_tiles.append(game_tiles.pop())
+        '''
 
         # Group similar tiles
         player_tiles.sort(key=itemgetter('suit', 'type'))
 
         sio.emit('update_tiles', player_tiles, to=player_uuid)
+    room['game_tiles'] = [{ 'suit': k[0], 'type': k[1] } for k, v in sampler.samples.items() for _ in range(v)]
+    logger.info(room['game_tiles'])
     logger.info(f'Dealt tiles to players for room_id={room_id}')
 
 def emit_player_current_state(player_uuid, room_id):
@@ -100,6 +114,9 @@ def start_game(room_id):
 
     # Check if player can win, and emit event if they can
     check_and_update_win_conditions(player_uuid, room_id)
+
+    # Check for concealed kong for current hand and emit data to client if applicable
+    check_for_concealed_kong(player_uuid, room_id)
 
     cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
     start_turn(player_uuid, room_id)
@@ -242,6 +259,8 @@ def get_existing_game_data(sid, payload):
             'newMeld': player['newMeld'],
             'canDeclareWin': player['canDeclareWin'],
             'isGameOver': player['currentState'] in {'WIN', 'LOSS'},
+            'concealedKongs': player['concealedKongs'],
+            'pastDiscardedTiles': room['past_discarded_tiles'],
         }
     else:
         logger.info('No game in progress')
@@ -347,7 +366,7 @@ def end_turn(sid, payload):
 
         # Add to discarded tiles history
         if room['current_discarded_tile']:
-            room['discarded_tiles'].append(room['current_discarded_tile'])
+            room['past_discarded_tiles'].append(room['current_discarded_tile'])
         room['current_discarded_tile'] = discarded_tile
 
         # Remove from player tiles
