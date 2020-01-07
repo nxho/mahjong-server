@@ -77,8 +77,9 @@ class MahjongCacheClient:
     def get_opponents(self, room_id, player_uuid):
         room = self.get_room(room_id)
         player_idx = room['player_uuids'].index(player_uuid)
+        num_of_players = len(room['player_uuids'])
         # Order opponent uuids in order of play
-        opponent_uuids = [room['player_uuids'][(player_idx + i) % 4] for i in range(1, 4)]
+        opponent_uuids = [room['player_uuids'][(player_idx + i) % num_of_players] for i in range(1, num_of_players)]
         return [{
             'name': room['player_by_uuid'][opponent_id]['username'],
             'revealedMelds': room['player_by_uuid'][opponent_id]['revealedMelds'],
