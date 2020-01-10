@@ -74,21 +74,19 @@ def deal_tiles(room_id):
     game_tiles = room['game_tiles']
     player_uuids = room['player_uuids']
     # FIXME: remove this when done testing
-    sampler = TileSampler()
+    # sampler = TileSampler()
     for idx, player_uuid in enumerate(player_uuids):
         player_tiles = room['player_by_uuid'][player_uuid]['tiles']
 
         # First player (dealer) gets 14 tiles, discards a tile to start the game
         num_of_tiles = 14 if idx == 0 else 13
-        if idx == 0:
-            pong = sampler.pong()
-            player_tiles.extend(pong + [dict(pong[0])] + sampler.rand_tile(9))
-        else:
-            player_tiles.extend(sampler.rand_tile(13))
-        '''
         for _ in range(num_of_tiles):
             player_tiles.append(game_tiles.pop())
-        '''
+        # FIXME: remove this when done testing
+        # if idx == 0:
+        #     player_tiles.extend(sampler.kong() + sampler.rand_tile(9))
+        # else:
+        #     player_tiles.extend(sampler.rand_tile(13))
 
         # Group similar tiles
         player_tiles.sort(key=itemgetter('suit', 'type'))

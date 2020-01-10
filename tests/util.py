@@ -35,6 +35,16 @@ class TileSampler():
             self.samples[tile_key] -= 3
         return res
 
+    def kong(self, n=1):
+        res = []
+        for tile_key in random.sample([key for key, count in self.samples.items() if count == 4], k=n):
+            res += [{
+                'suit': tile_key[0],
+                'type': tile_key[1],
+            } for _ in range(4)]
+            self.samples[tile_key] -= 4
+        return res
+
     def chow(self, n=1):
         res = []
         numeric_suits = {n['suit'] for n in numeric}

@@ -31,14 +31,13 @@ class MahjongCacheClient:
 
         # Possible player states
         self.states = set([
+            'NO_ACTION',
             'DRAW_TILE',
             'DISCARD_TILE',
             'DECLARE_CLAIM',
-            'NO_ACTION',
+            'REVEAL_MELD',
             'LOSS',
             'WIN',
-            'CLAIM_TILE',
-            'NO_CLAIM_ATTEMPT',
         ])
 
     def get_room(self, room_id):
@@ -85,6 +84,7 @@ class MahjongCacheClient:
             'revealedMelds': room['player_by_uuid'][opponent_id]['revealedMelds'],
             'tileCount': len(room['player_by_uuid'][opponent_id]['tiles']),
             'concealedKongs': room['player_by_uuid'][opponent_id]['concealedKongs'],
+            'isCurrentTurn': room['player_by_uuid'][opponent_id]['currentState'] in { 'DRAW_TILE', 'DISCARD_TILE', 'REVEAL_MELD' },
         } for opponent_id in opponent_uuids]
 
     def add_player(self, room_id, username, player_uuid):
