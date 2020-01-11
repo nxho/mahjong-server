@@ -92,8 +92,9 @@ def deal_tiles(room_id):
         player_tiles.sort(key=itemgetter('suit', 'type'))
 
         sio.emit('update_tiles', player_tiles, to=player_uuid)
-    room['game_tiles'] = [{ 'suit': k[0], 'type': k[1] } for k, v in sampler.samples.items() for _ in range(v)]
-    logger.info(room['game_tiles'])
+    # FIXME: remove this when done testing
+    # room['game_tiles'] = [{ 'suit': k[0], 'type': k[1] } for k, v in sampler.samples.items() for _ in range(v)]
+    # logger.info(room['game_tiles'])
     logger.info(f'Dealt tiles to players for room_id={room_id}')
 
 def emit_player_current_state(player_uuid, room_id):
@@ -104,6 +105,7 @@ def emit_player_current_state(player_uuid, room_id):
 
 def start_next_turn(room_id):
     player_uuid = cache.point_to_next_player(room_id)
+    update_opponents(room_id)
     start_turn(player_uuid, room_id)
 
 def start_game(room_id):
