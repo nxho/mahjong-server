@@ -2,7 +2,7 @@ import random
 
 from collections import Counter
 
-from context import honor, numeric
+from tests.context import honor, numeric
 
 class TileRack(list):
     """Better string representation of list of tiles"""
@@ -33,6 +33,16 @@ class TileSampler():
                 'type': tile_key[1],
             } for _ in range(3)]
             self.samples[tile_key] -= 3
+        return res
+
+    def kong(self, n=1):
+        res = []
+        for tile_key in random.sample([key for key, count in self.samples.items() if count == 4], k=n):
+            res += [{
+                'suit': tile_key[0],
+                'type': tile_key[1],
+            } for _ in range(4)]
+            self.samples[tile_key] -= 4
         return res
 
     def chow(self, n=1):

@@ -17,7 +17,7 @@ class MahjongCacheClient:
             'player_by_uuid': {},
             'player_uuids': [],
             'current_player_idx': 0,
-            'discarded_tiles': [],
+            'past_discarded_tiles': [],
             'current_discarded_tile': None,
             'messages': [],
             'claimed_player_uuids': set(),
@@ -31,14 +31,13 @@ class MahjongCacheClient:
 
         # Possible player states
         self.states = set([
+            'NO_ACTION',
             'DRAW_TILE',
             'DISCARD_TILE',
             'DECLARE_CLAIM',
-            'NO_ACTION',
+            'REVEAL_MELD',
             'LOSS',
             'WIN',
-            'CLAIM_TILE',
-            'NO_CLAIM_ATTEMPT',
         ])
 
     def get_room(self, room_id):
@@ -76,11 +75,17 @@ class MahjongCacheClient:
 
     def get_opponents(self, room_id, player_uuid):
         room = self.get_room(room_id)
+        player_idx = room['player_uuids'].index(player_uuid)
+        num_of_players = len(room['player_uuids'])
+        # Order opponent uuids in order of play
+        opponent_uuids = [room['player_uuids'][(player_idx + i) % num_of_players] for i in range(1, num_of_players)]
         return [{
             'name': room['player_by_uuid'][opponent_id]['username'],
             'revealedMelds': room['player_by_uuid'][opponent_id]['revealedMelds'],
             'tileCount': len(room['player_by_uuid'][opponent_id]['tiles']),
-        } for opponent_id in [pid for pid in room['player_uuids'] if pid != player_uuid]]
+            'concealedKongs': room['player_by_uuid'][opponent_id]['concealedKongs'],
+            'isCurrentTurn': room['player_by_uuid'][opponent_id]['currentState'] in { 'DRAW_TILE', 'DISCARD_TILE', 'REVEAL_MELD' },
+        } for opponent_id in opponent_uuids]
 
     def add_player(self, room_id, username, player_uuid):
         if player_uuid in self.room_id_by_uuid:
@@ -97,7 +102,6 @@ class MahjongCacheClient:
         room['player_by_uuid'][player_uuid] = {
             'username': username,
             'tiles': [],
-            'isCurrentTurn': False,
             'currentState': 'NO_ACTION',
             'declareClaimStartTime': None,
             'declaredMeldType': None,
@@ -106,6 +110,7 @@ class MahjongCacheClient:
             'newMeld': [],
             'concealedKongs': [],
             'canDeclareKong': False,
+            'canDeclareWin': False,
         }
 
         # Add uuid to list of active players

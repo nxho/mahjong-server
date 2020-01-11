@@ -16,6 +16,9 @@ import mahjong_rules
 from tile_groups import honor, numeric, bonus
 from cacheclient import MahjongCacheClient
 
+# TODO: this is just for testing purposes
+from tests.util import TileSampler
+
 ### Load environment variables from dotenv ###
 
 env_path = Path('.') / '.env'
@@ -70,6 +73,8 @@ def deal_tiles(room_id):
     room = cache.get_room(room_id)
     game_tiles = room['game_tiles']
     player_uuids = room['player_uuids']
+    # FIXME: remove this when done testing
+    # sampler = TileSampler()
     for idx, player_uuid in enumerate(player_uuids):
         player_tiles = room['player_by_uuid'][player_uuid]['tiles']
 
@@ -77,11 +82,19 @@ def deal_tiles(room_id):
         num_of_tiles = 14 if idx == 0 else 13
         for _ in range(num_of_tiles):
             player_tiles.append(game_tiles.pop())
+        # FIXME: remove this when done testing
+        # if idx == 0:
+        #     player_tiles.extend(sampler.kong() + sampler.rand_tile(9))
+        # else:
+        #     player_tiles.extend(sampler.rand_tile(13))
 
         # Group similar tiles
         player_tiles.sort(key=itemgetter('suit', 'type'))
 
         sio.emit('update_tiles', player_tiles, to=player_uuid)
+    # FIXME: remove this when done testing
+    # room['game_tiles'] = [{ 'suit': k[0], 'type': k[1] } for k, v in sampler.samples.items() for _ in range(v)]
+    # logger.info(room['game_tiles'])
     logger.info(f'Dealt tiles to players for room_id={room_id}')
 
 def emit_player_current_state(player_uuid, room_id):
@@ -92,20 +105,25 @@ def emit_player_current_state(player_uuid, room_id):
 
 def start_next_turn(room_id):
     player_uuid = cache.point_to_next_player(room_id)
+    update_opponents(room_id)
     start_turn(player_uuid, room_id)
 
 def start_game(room_id):
     room = cache.get_room(room_id)
     player_uuid = room['player_uuids'][room['current_player_idx']]
+
+    # Check if player can win, and emit event if they can
+    check_and_update_win_conditions(player_uuid, room_id)
+
+    # Check for concealed kong for current hand and emit data to client if applicable
+    check_for_concealed_kong(player_uuid, room_id)
+
     cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
     start_turn(player_uuid, room_id)
 
 def start_turn(player_uuid, room_id):
     emit_player_current_state(player_uuid, room_id)
     logger.info(f'Starting {player_uuid}\'s turn in room_id={room_id}')
-
-    # TODO: only thing start_turn does now in the client is to set "isCurrentTurn" to true, could probably remove this?
-    sio.emit('start_turn', to=player_uuid)
 
 def update_opponents(room_id):
     room = cache.get_room(room_id)
@@ -116,6 +134,30 @@ def update_opponents_for_player(room_id, player_uuid):
     opponents = cache.get_opponents(room_id, player_uuid)
     logger.info(f'Sending update_opponents event to player_uuid={player_uuid} with opponents={opponents} for room_id={room_id}')
     sio.emit('update_opponents', opponents, to=player_uuid)
+
+def check_and_update_win_conditions(player_uuid, room_id):
+    player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+
+    can_win = mahjong_rules.can_meld_concealed_hand(player['tiles'], 4 - len(player['revealedMelds']))
+    if can_win != player['canDeclareWin']:
+        player['canDeclareWin'] = can_win
+        sio.emit('update_can_declare_win', can_win, to=player_uuid)
+
+def check_for_concealed_kong(player_uuid, room_id):
+    player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+
+    can_declare_kong = False
+    for idx in range(len(player['tiles'])):
+        if mahjong_rules.can_meld_kong(
+            tiles=[t for j, t in enumerate(player['tiles']) if j != idx],
+            discarded_tile=player['tiles'][idx]
+        ):
+            can_declare_kong = True
+            break
+
+    if can_declare_kong != player['canDeclareKong']:
+        player['canDeclareKong'] = can_declare_kong
+        sio.emit('update_can_declare_kong', can_declare_kong, to=player_uuid)
 
 ##### Decorators for event handlers #####
 
@@ -215,6 +257,10 @@ def get_existing_game_data(sid, payload):
             'discardedTile': room['current_discarded_tile'],
             'revealedMelds': player['revealedMelds'],
             'newMeld': player['newMeld'],
+            'canDeclareWin': player['canDeclareWin'],
+            'isGameOver': player['currentState'] in {'WIN', 'LOSS'},
+            'concealedKongs': player['concealedKongs'],
+            'pastDiscardedTiles': room['past_discarded_tiles'],
         }
     else:
         logger.info('No game in progress')
@@ -246,6 +292,10 @@ def enter_game(sid, payload):
         logger.info(f'No room provided by player_uuid={player_uuid}, searching for next available room')
         room_id = cache.search_for_room(player_uuid)
 
+    if cache.get_room_size(room_id) == 4:
+        logger.info(f'Player with player_uuid={player_uuid} and player_name={username} tried to join room with already 4 players room_id={room_id}')
+        return
+
     save_session_data(sid, player_uuid, room_id)
 
     sio.emit('update_room_id', room_id, to=sid)
@@ -268,7 +318,7 @@ def enter_game(sid, payload):
         update_opponents(room_id)
         start_game(room_id)
 
-@sio.event
+@sio.on('draw_tile')
 @log_exception
 def draw_tile(sid):
     with sio.session(sid) as session:
@@ -284,6 +334,13 @@ def draw_tile(sid):
         sio.emit('extend_tiles', drawn_tile, to=sid)
 
         player['currentState'] = 'DISCARD_TILE'
+
+        # Check win conditions for current hand
+        check_and_update_win_conditions(player_uuid, room_id)
+
+        # Check for concealed kong for current hand and emit data to client if applicable
+        check_for_concealed_kong(player_uuid, room_id)
+
         emit_player_current_state(player_uuid, room_id)
 
 # Player notifies server to end their turn and start next player's turn
@@ -309,7 +366,7 @@ def end_turn(sid, payload):
 
         # Add to discarded tiles history
         if room['current_discarded_tile']:
-            room['discarded_tiles'].append(room['current_discarded_tile'])
+            room['past_discarded_tiles'].append(room['current_discarded_tile'])
         room['current_discarded_tile'] = discarded_tile
 
         # Remove from player tiles
@@ -530,15 +587,29 @@ def complete_new_meld(sid, payload):
         emit_player_current_state(player_uuid, room_id)
 
 @sio.on('declare_concealed_kong')
-@validate_payload_fields(['concealed_kong'])
 @log_exception
-def declare_concealed_kong(sid, payload):
-    concealed_kong = payload['concealed_kong']
-
+def declare_concealed_kong(sid):
     with sio.session(sid) as session:
         room_id = session['room_id']
         player_uuid = session['player_uuid']
 
+        player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+
+        # Remove kong from tiles and add to list of concealed kongs
+        tile_for_kong = mahjong_rules.get_tile_for_kong(player['tiles'])
+        if not tile_for_kong:
+            logger.error(f"No valid tile available for concealed kong for player with player_uuid={player_uuid}, player_name={player_name}")
+            return
+
+        player['tiles'] = [t for t in player['tiles'] if t != tile_for_kong]
+        player['concealedKongs'].append([dict(tile_for_kong) for _ in range(4)])
+        player['currentState'] = 'DRAW_TILE'
+
+        # TODO: Should be able to consolidate into one generic update event that should allow us to update
+        #       an arbitrary number of fields on the player
+        sio.emit('update_tiles', player['tiles'], to=player_uuid)
+        sio.emit('update_concealed_kongs', player['concealedKongs'], to=player_uuid)
+        sio.emit('update_current_state', player['currentState'], to=player_uuid)
 
 @sio.on('declare_win')
 @log_exception
@@ -573,6 +644,9 @@ def emit_winning_game_state(winning_player_uuid, room_id):
             room['player_by_uuid'][pid]['currentState'] = 'LOSS'
         emit_player_current_state(pid, room_id)
 
+    logger.info(f'Sending end_game event to all players in room_id={room_id}')
+    sio.emit('end_game', to=room_id)
+
 @sio.on('text_message')
 @validate_payload_fields(['message'])
 @log_exception
@@ -597,18 +671,19 @@ def leave_game(sid):
         player_uuid = session['player_uuid']
         room = cache.get_room(room_id)
 
-        # Remove player_uuid from room data
-        del room['player_by_uuid'][player_uuid]
-        room['player_uuids'].remove(player_uuid)
-
         # Remove player_uuid to room_id mapping
         del cache.room_id_by_uuid[player_uuid]
 
         # Remove player_uuid from socketio data
-        sio.leave_room(room_id)
+        sio.leave_room(sid, room_id)
         del session['room_id']
 
         logger.info(f'Player {player_uuid} left room_id={room_id}')
+
+        # Free up space by deleting room data once the room is empty
+        if cache.get_room_size(room_id) == 0:
+            logger.info(f'Room room_id={room_id} is now empty, delete room data')
+            del cache.rooms[room_id]
 
 @sio.on('disconnect')
 @log_exception
