@@ -40,6 +40,8 @@ class MahjongCacheClient:
             'WIN',
         ])
 
+        self.connection_count = 0
+
     def get_room(self, room_id):
         return self.rooms[room_id]
 
@@ -111,6 +113,7 @@ class MahjongCacheClient:
             'concealedKongs': [],
             'canDeclareKong': False,
             'canDeclareWin': False,
+            'isHost': True if not room['player_uuids'] else False
         }
 
         # Add uuid to list of active players

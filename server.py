@@ -208,6 +208,17 @@ def log_exception(func):
 def connect(sid, environ):
     logger.info(f'Connect sid={sid}')
 
+@sio.on('ready')
+@log_exception
+def ready(sid):
+    with sio.session(sid) as session:
+        cache.connection_count += 1
+        username = f'guest{cache.connection_count}'
+        session['username'] = username
+
+        sio.enter_room(sid, 'lobby')
+        sio.emit('text_message', f'{username} has entered the lobby', to='lobby')
+
 @sio.event
 def get_possible_states(sid):
     states = list(cache.states)
@@ -261,6 +272,7 @@ def get_existing_game_data(sid, payload):
             'isGameOver': player['currentState'] in {'WIN', 'LOSS'},
             'concealedKongs': player['concealedKongs'],
             'pastDiscardedTiles': room['past_discarded_tiles'],
+            'isHost': player['isHost'],
         }
     else:
         logger.info('No game in progress')
@@ -653,13 +665,15 @@ def emit_winning_game_state(winning_player_uuid, room_id):
 def message(sid, payload):
     with sio.session(sid) as session:
         msg = payload['message']
-        room_id = session['room_id']
-        player_uuid = session['player_uuid']
-        room = cache.get_room(room_id)
-        username = room['player_by_uuid'][player_uuid]['username']
+        room_id = 'lobby'
+        username = session['username']
+        if 'room_id' in session:
+            room_id = session['room_id']
+            player_uuid = session['player_uuid']
+            room = cache.get_room(room_id)
+            username = room['player_by_uuid'][player_uuid]['username']
 
         msg_to_send = f'{username}: {msg}'
-        room['messages'].append(msg_to_send)
         sio.emit('text_message', msg_to_send, to=room_id)
         logger.info(f'{username} says: {msg}')
 
