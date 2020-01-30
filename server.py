@@ -119,6 +119,9 @@ def start_game(room_id):
     check_for_concealed_kong(player_uuid, room_id)
 
     cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
+
+    update_opponents(room_id)
+
     start_turn(player_uuid, room_id)
 
 def start_turn(player_uuid, room_id):
@@ -209,15 +212,18 @@ def connect(sid, environ):
     logger.info(f'Connect sid={sid}')
 
 @sio.on('ready')
+@validate_payload_fields(['player-uuid'])
 @log_exception
-def ready(sid):
+def ready(sid, payload):
+    player_uuid = payload['player-uuid']
     with sio.session(sid) as session:
         cache.connection_count += 1
         username = f'guest{cache.connection_count}'
         session['username'] = username
 
-        sio.enter_room(sid, 'lobby')
-        sio.emit('text_message', f'{username} has entered the lobby', to='lobby')
+        if player_uuid not in cache.room_id_by_uuid:
+            sio.enter_room(sid, 'lobby')
+            sio.emit('text_message', f'{username} has entered the lobby', to='lobby')
 
 @sio.event
 def get_possible_states(sid):
@@ -308,6 +314,11 @@ def enter_game(sid, payload):
         logger.info(f'Player with player_uuid={player_uuid} and player_name={username} tried to join room with already 4 players room_id={room_id}')
         return
 
+    # Player is by default assigned to room 'lobby' when not associated with a game
+    sio.emit('text_message', f"[{sio.get_session(sid)['username']}] changed their name to [{username}]", to='lobby')
+    sio.emit('text_message', f'{username} left the lobby', to='lobby')
+    sio.leave_room(sid, 'lobby')
+
     save_session_data(sid, player_uuid, room_id)
 
     sio.emit('update_room_id', room_id, to=sid)
@@ -315,11 +326,14 @@ def enter_game(sid, payload):
     # Add player into game data
     cache.add_player(room_id, username, player_uuid)
 
-    # Update opponents for all room members
     update_opponents(room_id)
 
     # Announce message to chatroom
     sio.emit('text_message', f'{username} joined the game', to=room_id)
+
+    selected_keys = { 'isHost' }
+    player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+    sio.emit('update_player', { k: player[k] for k in selected_keys if k in player }, to=sid)
 
     # If enough players, start game
     num_of_players = cache.get_room_size(room_id)
@@ -327,7 +341,6 @@ def enter_game(sid, payload):
         logger.info(f'Enough players have joined, starting game for room_id={room_id}')
         init_tiles(room_id)
         deal_tiles(room_id)
-        update_opponents(room_id)
         start_game(room_id)
 
 @sio.on('draw_tile')
