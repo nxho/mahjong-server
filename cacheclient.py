@@ -51,6 +51,7 @@ class MahjongCacheClient:
     def get_room_size(self, room_id):
         return len(self.rooms[room_id]['player_uuids'])
 
+    # TODO: should solve for collisions?
     def generate_room_id(self):
         chars = [c for c in string.ascii_letters + string.digits]
         random.shuffle(chars)
