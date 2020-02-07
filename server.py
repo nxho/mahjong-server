@@ -119,6 +119,9 @@ def start_game(room_id):
     check_for_concealed_kong(player_uuid, room_id)
 
     cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
+
+    update_opponents(room_id)
+
     start_turn(player_uuid, room_id)
 
 def start_turn(player_uuid, room_id):
@@ -158,6 +161,18 @@ def check_for_concealed_kong(player_uuid, room_id):
     if can_declare_kong != player['canDeclareKong']:
         player['canDeclareKong'] = can_declare_kong
         sio.emit('update_can_declare_kong', can_declare_kong, to=player_uuid)
+
+def emit_server_message(text, to, skip_sid=[]):
+    sio.emit('text_message', {
+        'msgType': 'SERVER_MSG',
+        'msgText': text,
+    }, to=to, skip_sid=skip_sid)
+
+def emit_player_message(text, to, skip_sid=[]):
+    sio.emit('text_message', {
+        'msgType': 'PLAYER_MSG',
+        'msgText': text,
+    }, to=to, skip_sid=skip_sid)
 
 ##### Decorators for event handlers #####
 
@@ -207,6 +222,21 @@ def log_exception(func):
 @log_exception
 def connect(sid, environ):
     logger.info(f'Connect sid={sid}')
+
+@sio.on('ready')
+@validate_payload_fields(['player-uuid'])
+@log_exception
+def ready(sid, payload):
+    player_uuid = payload['player-uuid']
+    with sio.session(sid) as session:
+        cache.connection_count += 1
+        username = f'guest{cache.connection_count}'
+        session['username'] = username
+
+        if player_uuid not in cache.room_id_by_uuid:
+            sio.enter_room(sid, 'lobby')
+            emit_server_message(f'{username} has entered the lobby', to='lobby', skip_sid=sid)
+            emit_server_message(f'You have entered the lobby as "{username}"', to=sid)
 
 @sio.event
 def get_possible_states(sid):
@@ -261,6 +291,7 @@ def get_existing_game_data(sid, payload):
             'isGameOver': player['currentState'] in {'WIN', 'LOSS'},
             'concealedKongs': player['concealedKongs'],
             'pastDiscardedTiles': room['past_discarded_tiles'],
+            'isHost': player['isHost'],
         }
     else:
         logger.info('No game in progress')
@@ -283,9 +314,15 @@ def reemit_events(sid):
 @validate_payload_fields(['username', 'player_uuid'])
 @log_exception
 def enter_game(sid, payload):
-    username = payload['username']
+    new_username = payload['username']
     player_uuid = payload['player_uuid']
     room_id = payload['room_id'] if 'room_id' in payload else None
+    should_create_room = payload['should_create_room']
+
+    if should_create_room:
+        logger.info(f'Generating new room id for player_uuid={player_uuid} as host')
+        room_id = cache.generate_room_id()
+        cache.open_room_ids.add(room_id)
 
     if not room_id:
         # No room provided by client, search for next available room
@@ -296,18 +333,36 @@ def enter_game(sid, payload):
         logger.info(f'Player with player_uuid={player_uuid} and player_name={username} tried to join room with already 4 players room_id={room_id}')
         return
 
-    save_session_data(sid, player_uuid, room_id)
+    # Player is by default assigned to room 'lobby' when not associated with a game
+    username = sio.get_session(sid)['username']
+    if new_username:
+        # Only replace username if the username provided is non-empty
+        old_username, username = username, new_username
 
-    sio.emit('update_room_id', room_id, to=sid)
+        emit_server_message(f"{old_username} changed their name to \"{username}\"", to='lobby', skip_sid=sid)
+        emit_server_message(f"You changed your name from \"{old_username}\" to \"{username}\"", to=sid)
+
+    # Leave lobby room
+    emit_server_message(f'{username} left the lobby', to='lobby', skip_sid=sid)
+    emit_server_message(f'You left the lobby', to=sid)
+    sio.leave_room(sid, 'lobby')
 
     # Add player into game data
     cache.add_player(room_id, username, player_uuid)
 
-    # Update opponents for all room members
+    save_session_data(sid, player_uuid, room_id)
+
+    sio.emit('update_room_id', room_id, to=sid)
+
     update_opponents(room_id)
 
     # Announce message to chatroom
-    sio.emit('text_message', f'{username} joined the game', to=room_id)
+    emit_server_message(f'{username} joined the game', to=room_id, skip_sid=sid)
+    emit_server_message(f'You joined the game', to=sid)
+
+    selected_keys = { 'isHost' }
+    player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+    sio.emit('update_player', { k: player[k] for k in selected_keys if k in player }, to=sid)
 
     # If enough players, start game
     num_of_players = cache.get_room_size(room_id)
@@ -315,7 +370,6 @@ def enter_game(sid, payload):
         logger.info(f'Enough players have joined, starting game for room_id={room_id}')
         init_tiles(room_id)
         deal_tiles(room_id)
-        update_opponents(room_id)
         start_game(room_id)
 
 @sio.on('draw_tile')
@@ -653,14 +707,20 @@ def emit_winning_game_state(winning_player_uuid, room_id):
 def message(sid, payload):
     with sio.session(sid) as session:
         msg = payload['message']
-        room_id = session['room_id']
-        player_uuid = session['player_uuid']
-        room = cache.get_room(room_id)
-        username = room['player_by_uuid'][player_uuid]['username']
+        room_id = 'lobby'
+        username = session['username']
+        if 'room_id' in session:
+            room_id = session['room_id']
+            player_uuid = session['player_uuid']
+            room = cache.get_room(room_id)
+            username = room['player_by_uuid'][player_uuid]['username']
 
-        msg_to_send = f'{username}: {msg}'
-        room['messages'].append(msg_to_send)
-        sio.emit('text_message', msg_to_send, to=room_id)
+        # Emit to room, skip sender
+        emit_player_message(f'{username}: {msg}', to=room_id, skip_sid=sid)
+
+        # Emit to sender
+        emit_player_message(f'You: {msg}', to=sid)
+
         logger.info(f'{username} says: {msg}')
 
 @sio.on('leave_game')

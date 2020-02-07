@@ -21,6 +21,7 @@ class MahjongCacheClient:
             'current_discarded_tile': None,
             'messages': [],
             'claimed_player_uuids': set(),
+            'human_player_count': 0,
         })
 
         # User uuid to room id map, useful for rejoining a game
@@ -40,12 +41,17 @@ class MahjongCacheClient:
             'WIN',
         ])
 
+        self.connection_count = 0
+
+        self.lobby_room_id = self.generate_room_id()
+
     def get_room(self, room_id):
         return self.rooms[room_id]
 
     def get_room_size(self, room_id):
         return len(self.rooms[room_id]['player_uuids'])
 
+    # TODO: should solve for collisions?
     def generate_room_id(self):
         chars = [c for c in string.ascii_letters + string.digits]
         random.shuffle(chars)
@@ -87,7 +93,7 @@ class MahjongCacheClient:
             'isCurrentTurn': room['player_by_uuid'][opponent_id]['currentState'] in { 'DRAW_TILE', 'DISCARD_TILE', 'REVEAL_MELD' },
         } for opponent_id in opponent_uuids]
 
-    def add_player(self, room_id, username, player_uuid):
+    def add_player(self, room_id, username, player_uuid, isAi=False):
         if player_uuid in self.room_id_by_uuid:
             logger.info(f'Player uuid {player_uuid} is already in room, not re-adding')
             return
@@ -111,10 +117,15 @@ class MahjongCacheClient:
             'concealedKongs': [],
             'canDeclareKong': False,
             'canDeclareWin': False,
+            'isHost': True if not room['player_uuids'] else False,
+            'isAi': isAi,
         }
 
         # Add uuid to list of active players
         room['player_uuids'].append(player_uuid)
+
+        if not isAi:
+            room['human_player_count'] += 1
 
     # TODO: generalize function to "set current player" essentially, can
     #       pass in optional parameter to set a specific player
