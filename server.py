@@ -375,7 +375,8 @@ def get_sio_with_handlers(username, player_uuid, room_id, cache):
 
     server_url = 'http://localhost:5000'
     if os.getenv('MAHJONG_ENV', 'dev') == 'heroku':
-        server_url = 'https://0.0.0.0:80'
+        # FIXME: don't specify this explicitly in code
+        server_url = 'https://mahjong-server-dev.herokuapp.com'
 
     sio.connect(server_url)
 
