@@ -44,8 +44,6 @@ class MahjongCacheClient:
 
         self.connection_count = 0
 
-        self.lobby_room_id = self.generate_room_id()
-
     def get_room(self, room_id):
         return self.rooms[room_id]
 

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import socketio
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -32,6 +33,7 @@ config = {}
 config['include_bonus'] = os.getenv('INCLUDE_BONUS', 'True') == 'True'
 config['to_console'] = os.getenv('TO_CONSOLE', 'False') == 'True'
 config['to_file'] = os.getenv('TO_FILE', 'False') == 'True'
+config['max_players_per_game'] = int(os.getenv('MAX_PLAYERS_PER_GAME', '4'))
 
 #### Server initialization #####
 
@@ -302,7 +304,7 @@ def enter_game(sid, payload):
     new_username = payload['username']
     player_uuid = payload['player_uuid']
     room_id = payload['room_id'] if 'room_id' in payload else None
-    should_create_room = payload['should_create_room']
+    should_create_room = payload['should_create_room'] if 'should_create_room' in payload else False
 
     if should_create_room:
         logger.info(f'Generating new room id for player_uuid={player_uuid} as host')
@@ -349,6 +351,75 @@ def enter_game(sid, payload):
     player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
     sio.emit('update_player', { k: player[k] for k in selected_keys if k in player }, to=sid)
 
+def get_sio_with_handlers(username, player_uuid, room_id, cache):
+    sio = socketio.Client()
+
+    @sio.event
+    def update_current_state(current_state):
+        logger.info(f"AI {username} received update_current_state event")
+
+        if current_state == 'DISCARD_TILE':
+            player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+            sio.emit('end_turn', {
+                'discarded_tile': player['tiles'][0],
+            })
+        elif current_state == 'DRAW_TILE':
+            sio.emit('draw_tile')
+
+    @sio.event
+    def declare_claim_with_timer(payload):
+        logger.info(f"AI {username} received declare_claim_with_timer event")
+        sio.emit('update_claim_state', {
+            'declared_meld': None,
+        })
+
+    server_url = 'http://localhost:5000'
+    if os.getenv('MAHJONG_ENV', 'dev') == 'heroku':
+        server_url = 'http://localhost'
+
+    sio.connect(server_url)
+
+    sio.emit('ai_join_game', {
+        'username': username,
+        'player_uuid': player_uuid,
+        'room_id': room_id,
+    })
+
+    return sio
+
+def generate_ai_players(room_id, num_of_ai):
+    ai_clients = []
+    for i in range(num_of_ai):
+        ai_player_uuid = uuid.uuid4().hex
+        ai_player_username = f'AI-Player-{i}'
+        ai_clients.append(get_sio_with_handlers(ai_player_username, ai_player_uuid, room_id, cache))
+
+        cache.add_player(room_id, ai_player_username, ai_player_uuid)
+
+@sio.on('ai_join_game')
+@log_exception
+def ai_join_game(sid, payload):
+    username = payload['username']
+    player_uuid = payload['player_uuid']
+    room_id = payload['room_id'] if 'room_id' in payload else None
+
+    save_session_data(sid, player_uuid, room_id)
+
+    '''
+    sio.emit('update_room_id', room_id, to=sid)
+
+    update_opponents(room_id)
+    '''
+
+    # Announce message to chatroom
+    emit_server_message(f'{username} joined the game', to=room_id, skip_sid=sid)
+
+    '''
+    selected_keys = { 'username', 'isHost' }
+    player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+    sio.emit('update_player', { k: player[k] for k in selected_keys if k in player }, to=sid)
+    '''
+
 @sio.on('start_game')
 @log_exception
 def start_game(sid):
@@ -362,33 +433,39 @@ def start_game(sid):
         if not isHost:
             logger.warn(f'Received "start_game" event from non-host player with player_uuid={player_uuid}, not starting game')
 
-        # TODO: modify logic to generate AI players if host has started game with less than 4 players
-        if num_of_players == 4:
-            logger.info(f'Enough players have joined, starting game for room_id={room_id}')
-            init_tiles(room_id)
-            deal_tiles(room_id)
+        logger.info(f'Received "start_game" event from host player with player_uuid={player_uuid}, initializing game elements')
 
-            # player_uuid = room['player_uuids'][room['current_player_idx']]
+        if num_of_players < config['max_players_per_game']:
+            num_of_ai = config['max_players_per_game'] - num_of_players
+            logger.info(f"Only {num_of_players} player{'s' if num_of_players > 1 else ''} detected, generating {num_of_ai} AI player{'s' if num_of_ai > 1 else ''} for room_id={room_id}")
 
-            # Check if player can win, and emit event if they can
-            check_and_update_win_conditions(player_uuid, room_id)
+            generate_ai_players(room_id, num_of_ai)
+            # FIXME: remove return statement once ai is implemented
+            # return
 
-            # Check for concealed kong for current hand and emit data to client if applicable
-            check_for_concealed_kong(player_uuid, room_id)
+        logger.info(f'Sufficient players in room, starting game for room_id={room_id}')
+        init_tiles(room_id)
+        deal_tiles(room_id)
 
-            cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
+        # player_uuid = room['player_uuids'][room['current_player_idx']]
 
-            update_opponents(room_id)
+        # Check if player can win, and emit event if they can
+        check_and_update_win_conditions(player_uuid, room_id)
 
-            start_turn(player_uuid, room_id)
+        # Check for concealed kong for current hand and emit data to client if applicable
+        check_for_concealed_kong(player_uuid, room_id)
 
-            # Mark game as in progress
-            room['is_game_in_progress'] = True
-            sio.emit('update_player', {
-                'isGameInProgress': room['is_game_in_progress'],
-            }, to=room_id)
-        else:
-            logger.warn(f'Received "start_game" event from host player with player_uuid={player_uuid} without sufficient players, not starting game')
+        cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
+
+        update_opponents(room_id)
+
+        start_turn(player_uuid, room_id)
+
+        # Mark game as in progress
+        room['is_game_in_progress'] = True
+        sio.emit('update_player', {
+            'isGameInProgress': room['is_game_in_progress'],
+        }, to=room_id)
 
 @sio.on('draw_tile')
 @log_exception
