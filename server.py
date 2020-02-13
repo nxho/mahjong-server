@@ -108,22 +108,6 @@ def start_next_turn(room_id):
     update_opponents(room_id)
     start_turn(player_uuid, room_id)
 
-def start_game(room_id):
-    room = cache.get_room(room_id)
-    player_uuid = room['player_uuids'][room['current_player_idx']]
-
-    # Check if player can win, and emit event if they can
-    check_and_update_win_conditions(player_uuid, room_id)
-
-    # Check for concealed kong for current hand and emit data to client if applicable
-    check_for_concealed_kong(player_uuid, room_id)
-
-    cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
-
-    update_opponents(room_id)
-
-    start_turn(player_uuid, room_id)
-
 def start_turn(player_uuid, room_id):
     emit_player_current_state(player_uuid, room_id)
     logger.info(f'Starting {player_uuid}\'s turn in room_id={room_id}')
@@ -292,6 +276,7 @@ def get_existing_game_data(sid, payload):
             'concealedKongs': player['concealedKongs'],
             'pastDiscardedTiles': room['past_discarded_tiles'],
             'isHost': player['isHost'],
+            'isGameInProgress': room['is_game_in_progress'],
         }
     else:
         logger.info('No game in progress')
@@ -360,17 +345,50 @@ def enter_game(sid, payload):
     emit_server_message(f'{username} joined the game', to=room_id, skip_sid=sid)
     emit_server_message(f'You joined the game', to=sid)
 
-    selected_keys = { 'isHost' }
+    selected_keys = { 'username', 'isHost' }
     player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
     sio.emit('update_player', { k: player[k] for k in selected_keys if k in player }, to=sid)
 
-    # If enough players, start game
-    num_of_players = cache.get_room_size(room_id)
-    if num_of_players == 4:
-        logger.info(f'Enough players have joined, starting game for room_id={room_id}')
-        init_tiles(room_id)
-        deal_tiles(room_id)
-        start_game(room_id)
+@sio.on('start_game')
+@log_exception
+def start_game(sid):
+    with sio.session(sid) as session:
+        room_id = session['room_id']
+        player_uuid = session['player_uuid']
+
+        num_of_players = cache.get_room_size(room_id)
+        room = cache.get_room(room_id)
+        isHost = room['player_by_uuid'][player_uuid]['isHost']
+        if not isHost:
+            logger.warn(f'Received "start_game" event from non-host player with player_uuid={player_uuid}, not starting game')
+
+        # TODO: modify logic to generate AI players if host has started game with less than 4 players
+        if num_of_players == 4:
+            logger.info(f'Enough players have joined, starting game for room_id={room_id}')
+            init_tiles(room_id)
+            deal_tiles(room_id)
+
+            # player_uuid = room['player_uuids'][room['current_player_idx']]
+
+            # Check if player can win, and emit event if they can
+            check_and_update_win_conditions(player_uuid, room_id)
+
+            # Check for concealed kong for current hand and emit data to client if applicable
+            check_for_concealed_kong(player_uuid, room_id)
+
+            cache.set_next_player(room_id, player_uuid, 'DISCARD_TILE')
+
+            update_opponents(room_id)
+
+            start_turn(player_uuid, room_id)
+
+            # Mark game as in progress
+            room['is_game_in_progress'] = True
+            sio.emit('update_player', {
+                'isGameInProgress': room['is_game_in_progress'],
+            }, to=room_id)
+        else:
+            logger.warn(f'Received "start_game" event from host player with player_uuid={player_uuid} without sufficient players, not starting game')
 
 @sio.on('draw_tile')
 @log_exception

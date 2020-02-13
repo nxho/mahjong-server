@@ -22,6 +22,7 @@ class MahjongCacheClient:
             'messages': [],
             'claimed_player_uuids': set(),
             'human_player_count': 0,
+            'is_game_in_progress': False,
         })
 
         # User uuid to room id map, useful for rejoining a game
