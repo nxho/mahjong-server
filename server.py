@@ -360,8 +360,9 @@ def get_sio_with_handlers(username, player_uuid, room_id, cache):
 
         if current_state == 'DISCARD_TILE':
             player = cache.get_room(room_id)['player_by_uuid'][player_uuid]
+            rand_idx = randrange(len(player['tiles']))
             sio.emit('end_turn', {
-                'discarded_tile': player['tiles'][0],
+                'discarded_tile': player['tiles'][rand_idx],
             })
         elif current_state == 'DRAW_TILE':
             sio.emit('draw_tile')
