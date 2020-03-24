@@ -34,7 +34,7 @@ config['include_bonus'] = os.getenv('INCLUDE_BONUS', 'True') == 'True'
 config['to_console'] = os.getenv('TO_CONSOLE', 'False') == 'True'
 config['to_file'] = os.getenv('TO_FILE', 'False') == 'True'
 config['max_players_per_game'] = int(os.getenv('MAX_PLAYERS_PER_GAME', '4'))
-config['claim_timeout_ms'] = int(os.getenv('CLAIM_TIMEOUT_MS', '4000'))
+config['claim_timeout_ms'] = int(os.getenv('CLAIM_TIMEOUT_MS', '5000'))
 
 #### Server initialization #####
 
@@ -108,7 +108,7 @@ def emit_player_current_state(player_uuid, room_id):
 
 def start_next_turn(room_id):
     room = cache.get_room(room_id)
-    if not room['tiles']:
+    if not room['game_tiles']:
         logger.info(f'No more tiles to draw, end game for room_id={room_id}')
         emit_draw_game_state(room_id)
         return
