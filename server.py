@@ -107,6 +107,11 @@ def emit_player_current_state(player_uuid, room_id):
     logger.info(f'Sending state update of new_state={new_state} to player_uuid={player_uuid}')
 
 def start_next_turn(room_id):
+    room = cache.get_room(room_id)
+    if not room['tiles']:
+        logger.info(f'No more tiles to draw, end game for room_id={room_id}')
+        emit_draw_game_state(room_id)
+        return
     player_uuid = cache.point_to_next_player(room_id)
     update_opponents(room_id)
     start_turn(player_uuid, room_id)
@@ -794,6 +799,16 @@ def emit_winning_game_state(winning_player_uuid, room_id):
             room['player_by_uuid'][pid]['currentState'] = 'WIN'
         else:
             room['player_by_uuid'][pid]['currentState'] = 'LOSS'
+        emit_player_current_state(pid, room_id)
+
+    logger.info(f'Sending end_game event to all players in room_id={room_id}')
+    sio.emit('end_game', to=room_id)
+
+def emit_draw_game_state(room_id):
+    room = cache.get_room(room_id)
+
+    for pid in room['player_uuids']:
+        room['player_by_uuid'][pid]['currentState'] = 'DRAW'
         emit_player_current_state(pid, room_id)
 
     logger.info(f'Sending end_game event to all players in room_id={room_id}')
