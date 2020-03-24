@@ -34,6 +34,7 @@ config['include_bonus'] = os.getenv('INCLUDE_BONUS', 'True') == 'True'
 config['to_console'] = os.getenv('TO_CONSOLE', 'False') == 'True'
 config['to_file'] = os.getenv('TO_FILE', 'False') == 'True'
 config['max_players_per_game'] = int(os.getenv('MAX_PLAYERS_PER_GAME', '4'))
+config['claim_timeout_ms'] = int(os.getenv('CLAIM_TIMEOUT_MS', '4000'))
 
 #### Server initialization #####
 
@@ -561,7 +562,7 @@ def emit_declare_claim_with_timer(pid, player):
     logger.debug(f"Initiating claim timer for player name={player['username']}")
     sio.emit('declare_claim_with_timer', {
         'startTime': formattedStartTime,
-        'msDuration': 3000,
+        'msDuration': config['claim_timeout_ms'],
     }, to=pid)
 
 @sio.on('declare_claim_start')
