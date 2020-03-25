@@ -689,14 +689,21 @@ def update_claim_state(sid, payload):
                     discarded_tile,
                     meld_type)
 
-                room['player_by_uuid'][next_pid]['validMeldSubsets'] = valid_tile_sets
-                room['player_by_uuid'][next_pid]['declaredMeldType'] = meld_type
-                room['player_by_uuid'][next_pid]['newMeld'] = [discarded_tile]
+                next_player = room['player_by_uuid'][next_pid]
+                next_player['validMeldSubsets'] = valid_tile_sets
+                next_player['declaredMeldType'] = meld_type
+                next_player['newMeld'] = [discarded_tile]
 
                 emit_player_current_state(next_pid, room_id)
-                emit_player_valid_meld_subsets(next_pid, room['player_by_uuid'][next_pid])
+                emit_player_valid_meld_subsets(next_pid, next_player)
 
+                # Update current discarded tile
                 sio.emit('update_discarded_tile', None, to=room_id)
+
+                # Update discarded tile history
+                sio.emit('update_player', {
+                    'pastDiscardedTiles': room['past_discarded_tiles'],
+                }, to=room_id)
             else:
                 # By default, no one was able to claim the discard, so start the next turn
                 start_next_turn(room_id)
