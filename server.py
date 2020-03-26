@@ -697,6 +697,9 @@ def update_claim_state(sid, payload):
                 emit_player_current_state(next_pid, room_id)
                 emit_player_valid_meld_subsets(next_pid, next_player)
 
+                # Give player ability to win even if they claimed with different meld type
+                check_and_update_win_conditions(next_pid, room_id)
+
                 # Update current discarded tile
                 sio.emit('update_discarded_tile', None, to=room_id)
 
