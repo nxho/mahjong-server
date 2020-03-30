@@ -1,9 +1,10 @@
 import pytest
 import random
+from collections import Counter
 
-from context import mahjong_rules
+from .context import mahjong_rules
 
-from util import TileRack, TileSampler
+from .util import TileRack, TileSampler
 
 def random_four_pong():
     res = TileRack()
@@ -254,6 +255,24 @@ def test_can_meld_concealed_hand(tiles, expected):
     actual = mahjong_rules.can_meld_concealed_hand(tiles)
     assert actual == expected
 
+def numeric_pair_chow_1():
+    res = TileRack()
+
+    res += [tile_dict('character', 2) for _ in range(2)]
+    res += [tile_dict('character', 3)]
+    res += [tile_dict('character', 4)]
+    res += [tile_dict('character', 5)]
+
+    return res
+
+@pytest.mark.parametrize('tiles, target_set_count, expected', [
+    (numeric_pair_chow_1(), 1, True),
+])
+def test_can_meld_concealed_hand_with_melds(tiles, target_set_count, expected):
+    """This test only verifies 14-tile concealed hands. Kongs and revealed sets should be verified in a separate function."""
+    actual = mahjong_rules.can_meld_concealed_hand(tiles, target_set_count)
+    assert actual == expected
+
 def chow_case_1():
     res = TileRack()
     tile_sampler = TileSampler()
@@ -282,8 +301,8 @@ def pong_case_1():
 @pytest.mark.parametrize('tiles, discarded_tile, expected', [
     (*pong_case_1(), True),
 ])
-def test_can_meld_pong(tiles, discarded_tile, expected):
-    actual = mahjong_rules.can_meld_pong(tiles, discarded_tile)
+def test_can_meld_pung(tiles, discarded_tile, expected):
+    actual = mahjong_rules.can_meld_pung(tiles, discarded_tile)
     assert actual == expected
 
 '''
@@ -322,4 +341,99 @@ def test_get_valid_tile_sets(tiles, discarded_tile, target_meld, expected):
     valid_tile_sets = mahjong_rules.get_valid_tile_sets(tiles, discarded_tile, target_meld)
 
     assert len(valid_tile_sets) == expected
+
+def honor_1():
+    res = TileRack()
+
+    res += [tile_dict('wind', 'south')]
+    res += [tile_dict('wind', 'north')]
+    res += [tile_dict('wind', 'south')]
+    res += [tile_dict('dragon', 'white')]
+    res += [tile_dict('wind', 'south')]
+    res += [tile_dict('wind', 'north')]
+    res += [tile_dict('dragon', 'white')]
+    res += [tile_dict('wind', 'north')]
+
+    return res
+
+def honor_1_melded():
+    res = []
+
+    res.append([tile_dict('wind', 'north') for _ in range(3)])
+    res.append([tile_dict('wind', 'south') for _ in range(3)])
+
+    res.append([tile_dict('dragon', 'white') for _ in range(2)])
+
+    return res
+
+def num_chow_pung_1():
+    res = TileRack()
+
+    res += [tile_dict('character', 3) for _ in range(1)]
+    res += [tile_dict('character', 4) for _ in range(1)]
+    res += [tile_dict('character', 8) for _ in range(4)]
+    res += [tile_dict('character', 7)]
+    res += [tile_dict('character', 5) for _ in range(1)]
+    res += [tile_dict('character', 9)]
+    res += [tile_dict('dragon', 'white') for _ in range(2)]
+
+    return res
+
+def num_chow_pung_1_ans():
+    res = []
+
+    res.append([
+        tile_dict('character', 3),
+        tile_dict('character', 4),
+        tile_dict('character', 5),
+    ])
+
+    res.append([
+        tile_dict('character', 8),
+        tile_dict('character', 8),
+        tile_dict('character', 8),
+    ])
+
+    res.append([
+        tile_dict('character', 7),
+        tile_dict('character', 8),
+        tile_dict('character', 9),
+    ])
+
+    res.append([tile_dict('dragon', 'white') for _ in range(2)])
+
+    return res
+
+def num_chow_pung_2():
+    res = TileRack()
+
+    res += [tile_dict('character', 5)]
+    res += [tile_dict('character', 3)]
+    res += [tile_dict('character', 4)]
+    res += [tile_dict('character', 4)]
+    res += [tile_dict('character', 5)]
+    res += [tile_dict('character', 5)]
+    res += [tile_dict('character', 3)]
+    res += [tile_dict('character', 4)]
+    res += [tile_dict('character', 3)]
+    res += [tile_dict('dragon', 'white') for _ in range(2)]
+
+    return res
+
+@pytest.mark.parametrize('tiles, num_of_target_melds, expected', [
+    (num_chow_pung_1(), 3, num_chow_pung_1_ans()),
+    # (num_chow_pung_2(), 3, []), # FIXME: this has two answers technically
+    (honor_1(), 2, honor_1_melded()) # 2 melds plus the eye
+])
+def test_get_melds(tiles, num_of_target_melds, expected):
+    ans = mahjong_rules.get_melds(tiles, num_of_target_melds)
+
+    counter = Counter()
+    for meld in ans:
+        counter[tuple([(t['suit'], t['type']) for t in meld])] += 1
+
+    for meld in expected:
+        counter[tuple([(t['suit'], t['type']) for t in meld])] -= 1
+
+    assert not +counter
 

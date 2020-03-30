@@ -804,8 +804,22 @@ def declare_win(sid):
         else:
             logger.info(f"Win attempt failed for player_uuid={player_uuid}, player_name={player_name}")
 
+def reduce_tiles_to_melds(player):
+    num_of_melds = len(player['revealedMelds']) + len(player['concealedKongs'])
+    return mahjong_rules.get_melds(player['tiles'], num_of_melds)
+
 def emit_winning_game_state(winning_player_uuid, room_id):
     room = cache.get_room(room_id)
+
+    winning_player = room['player_by_uuid'][winning_player_uuid]
+    remaining_melds = reduce_tiles_to_melds(winning_player)
+    winning_hand = remaining_melds + winning_player['revealedMelds'] + winning_player['concealedKongs']
+
+    # FIXME: not the best way to do this, but this works because UI expects a
+    # list of melds for revealedMelds data structure
+    winning_player['revealedMelds'] = winning_hand
+    winning_player['tiles'] = []
+    update_opponents(room_id)
 
     for pid in room['player_uuids']:
         if pid == winning_player_uuid:

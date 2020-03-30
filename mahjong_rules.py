@@ -1,5 +1,6 @@
 import copy
 from collections import defaultdict, Counter
+from operator import itemgetter
 
 from Constants import HONOR_SUITS, NUMERIC_SUITS, SETS_NEEDED_TO_WIN 
 
@@ -147,7 +148,7 @@ def can_meld_concealed_hand(tiles, target_set_count=4):
             for p_key in possible_pairs:
                 # If choosing current possible pair, results in empty counter, resolve pair and break
                 if is_pair(current_suit_counter, p_key):
-                    print(f'no more tiles left after choosing pair={p_key}, counter={current_suit_counter}')
+                    print(f'No more tiles left after choosing pair={p_key}, counter={current_suit_counter}')
                     pair += 1
                     break
                 potential_count = resolve_melds(current_suit_counter, p_key)
@@ -157,7 +158,11 @@ def can_meld_concealed_hand(tiles, target_set_count=4):
                     pair += 1
                     break
 
-    return pair == 1 and set_count == target_set_count
+    is_winning_hand = pair == 1 and set_count == target_set_count
+
+    print(f'can_meld_concealed_hand returned {is_winning_hand}')
+
+    return is_winning_hand
 
 def is_pair(counter, pair_key):
     return pair_key in counter and counter[pair_key] == 2 and len(counter) == 1
@@ -217,4 +222,79 @@ def resolve_pongs(counter):
         else:
             return 0
     return set_count
+
+def get_melds(tiles, num_of_target_melds, num_of_target_pairs = 1):
+    """Given a winning hand's remaining tiles, we return the actual melds"""
+    melds = []
+    pair = []
+    honor_counter = Counter()
+    numeric_counter = Counter()
+    for t in tiles:
+        t_suit, t_type = t['suit'], t['type']
+        if t_suit in HONOR_SUITS:
+            honor_counter[(t_suit, t_type)] += 1
+        else:
+            numeric_counter[(t_suit, t_type)] += 1
+
+    for t_key, t_cnt in honor_counter.items():
+        if t_cnt == 3:
+            num_of_target_melds -= 1
+            melds.append([{
+                'suit': t_key[0],
+                'type': t_key[1],
+            } for i in range(t_cnt)])
+        elif t_cnt == 2:
+            num_of_target_pairs -= 1
+            pair = [{
+                'suit': t_key[0],
+                'type': t_key[1],
+            } for i in range(t_cnt)]
+
+    # Compile all possible winning hands from numeric tiles
+    answers = make_melds(sorted(numeric_counter.items(), key=itemgetter(0, 1)), num_of_target_pairs)
+
+    print(f'Found {len(answers)} possible winning hands')
+
+    # Pick first answer and convert to dict items
+    # TODO: fix this to pick highest hand once point system is introduced
+    melds += [[{ 'suit': tup[0], 'type': tup[1] } for tup in meld] for meld in answers[0]]
+
+    # If pair was produced from honor tiles, add it
+    if pair:
+        melds += [pair]
+
+    return melds
+
+def make_melds(tiles, pairs_left, current_ans=[]):
+    if not tiles:
+        print(f'found final ans, adding current_ans={current_ans}')
+        return [current_ans]
+
+    ans = []
+    t = tiles[0]
+
+    print(f'beginning processing for tile={t}, current_ans={current_ans}')
+    if pairs_left > 0:
+        print('trying pair', t)
+        if t[1] >= 2:
+            print('found pair, adding to current_ans')
+            tiles_prime = [tuple(t[0], t[1] - 2)] + tiles[1:] if t[1] > 2 else tiles[1:]
+            ans += make_melds(tiles_prime, pairs_left - 1, current_ans + [[t[0] for i in range(2)]])
+
+    print('trying pung', t)
+    if t[1] >= 3:
+        print('found pung, adding to current_ans')
+        tiles_prime = [tuple(t[0], t[1] - 3)] + tiles[1:] if t[1] > 3 else tiles[1:]
+        ans += make_melds(tiles_prime, pairs_left, current_ans + [[t[0] for i in range(3)]])
+
+    if len(tiles) >= 3:
+        print('trying chow', t)
+        t1, t2, t3 = t[0], tiles[1][0], tiles[2][0]
+        if t1[0] == t2[0] == t3[0] and t1[1] + 2 == t2[1] + 1 == t3[1]:
+            print('found chow, adding to current_ans')
+            tiles_prime = [(tiles[i][0], tiles[i][1] - 1) for i in range(3) if tiles[i][1] > 1]
+            ans += make_melds(tiles_prime + tiles[3:], pairs_left, current_ans + [[t1, t2, t3]])
+
+    return ans
+
 
