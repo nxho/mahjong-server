@@ -31,10 +31,10 @@ def get_valid_tile_sets(tiles, discarded_tile, target_meld):
 
     return None
 
-def check_tiles_against_meld(tiles, discarded_tile, target_meld, table_sets=[], is_chow_allowed=True):
+def check_tiles_against_meld(tiles, discarded_tile, target_meld, revealed_melds_count, is_chow_allowed=True):
     if target_meld == 'WIN':
         tiles_with_discarded_tile = tiles + [discarded_tile]
-        target_set_count = SETS_NEEDED_TO_WIN - len(table_sets)
+        target_set_count = SETS_NEEDED_TO_WIN - revealed_melds_count
         if can_meld_concealed_hand(tiles_with_discarded_tile, target_set_count):
             return 3
     elif target_meld == 'PUNG':
@@ -133,10 +133,11 @@ def can_meld_concealed_hand(tiles, target_set_count=4):
         current_suit_counter = counter_by_suit[suit_key]
         possible_pairs = possible_pairs_by_suit[suit_key]
 
-        print(f'now processing {suit_key} tiles', current_suit_counter, possible_pairs)
+        print(f'now processing {suit_key} tiles, counter={current_suit_counter}, possible_pairs={possible_pairs}')
 
         # Try resolving melds without picking a pair
         potential_count = resolve_melds(current_suit_counter)
+        print(f'resolve_melds returned {potential_count} melds without choosing a pair')
         if potential_count:
             set_count += potential_count
             continue
@@ -146,9 +147,11 @@ def can_meld_concealed_hand(tiles, target_set_count=4):
             for p_key in possible_pairs:
                 # If choosing current possible pair, results in empty counter, resolve pair and break
                 if is_pair(current_suit_counter, p_key):
+                    print(f'no more tiles left after choosing pair={p_key}, counter={current_suit_counter}')
                     pair += 1
                     break
                 potential_count = resolve_melds(current_suit_counter, p_key)
+                print(f'resolve_melds returned {potential_count} melds when choosing with pair={p_key}')
                 if potential_count:
                     set_count += potential_count
                     pair += 1

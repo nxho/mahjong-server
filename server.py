@@ -594,7 +594,9 @@ def get_next_player_uuid(players, discarded_tile):
             p['tiles'],
             discarded_tile,
             p['declared_meld'],
+            p['revealed_melds_count'],
             is_chow_allowed=is_next_player)
+        logger.info(f"pid={p['pid']} received rank={rank} after verifying claim {p['declared_meld']}")
         pids_by_rank[rank].append((p['pid'], p['rel_pos'], p['declared_meld']))
     for i in range(3, 0, -1):
         if i in pids_by_rank:
@@ -657,6 +659,7 @@ def update_claim_state(sid, payload):
                         'tiles': player['tiles'],
                         'declared_meld': player['declaredMeldType'],
                         'rel_pos': (pidx - current_player_idx) % 4,
+                        'revealed_melds_count': len(player['revealedMelds']),
                     })
 
                 # Clear player data related to declaring claims on discards
