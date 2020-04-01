@@ -655,9 +655,6 @@ def update_claim_state(sid, payload):
                 next_player['declaredMeldType'] = meld_type
                 next_player['newMeld'] = [discarded_tile]
 
-                emit_player_current_state(next_pid, room_id)
-                emit_player_valid_meld_subsets(next_pid, next_player)
-
                 # Give player ability to win even if they claimed with different meld type
                 check_and_update_win_conditions(next_pid, room_id)
 
@@ -668,6 +665,13 @@ def update_claim_state(sid, payload):
                 sio.emit('update_player', {
                     'pastDiscardedTiles': room['past_discarded_tiles'],
                 }, to=room_id)
+
+                # Update opponents for each player (mainly to update isCurrentTurn)
+                update_opponents(room_id)
+
+                # Finally enable player to reveal meld
+                emit_player_current_state(next_pid, room_id)
+                emit_player_valid_meld_subsets(next_pid, next_player)
             else:
                 # By default, no one was able to claim the discard, so start the next turn
                 start_next_turn(room_id)
