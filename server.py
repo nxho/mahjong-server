@@ -652,7 +652,9 @@ def update_claim_state(sid, payload):
 
                 next_player = room['player_by_uuid'][next_pid]
                 next_player['validMeldSubsets'] = valid_tile_sets
-                next_player['declaredMeldType'] = meld_type
+
+                # Set declaredMeldType to save state in case page is reloaded, but needs to be cleared once the player completes the meld
+                next_player['declaredMeldType'] = meld_type # TODO: save state some other way
                 next_player['newMeld'] = [discarded_tile]
 
                 # Give player ability to win even if they claimed with different meld type
@@ -705,6 +707,7 @@ def complete_new_meld(sid, payload):
         # Update player's revealedMelds
         player['revealedMelds'].append(sorted(new_meld, key=itemgetter('suit', 'type')))
         player['newMeld'].clear()
+        player['declaredMeldType'] = None # FIXME: declaredMeldType needs to be cleared to ensure clean state before next round of claiming
 
         # Update player's tiles
         new_meld.remove(discarded_tile)
